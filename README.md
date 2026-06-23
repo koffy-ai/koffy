@@ -1,68 +1,119 @@
 # Koffy
 
-[简体中文](README.zh-CN.md)
+<p align="center">
+  <img src="internal/billing/assets/koffy.png" alt="Koffy" width="420">
+</p>
 
-Koffy is a self-hosted account, billing, and AI gateway for teams running multiple AI applications. It combines a shared user center, points and subscription entitlements, recharge orders, usage metering, model routing, and an OpenAI-compatible gateway.
+[English](README.en.md)
 
-> Koffy uses [Casdoor](https://casdoor.org/) for identity management. Both Compose examples start an empty Casdoor service, but Koffy does not create its organization, application, certificate, or optional SMS provider. You must complete that setup before login and registration work.
+Koffy 是一个面向多 AI 应用的开源统一账号、计费与模型网关底座。
 
-## What is included
+## 为什么开发 Koffy
 
-- **Koffy Billing API**: users, wallets, points, subscriptions, entitlements, recharge orders, profiles, and administration APIs.
-- **Koffy Gateway**: application authentication, user authentication, rate limits, model routing, pre-authorization, and final usage settlement.
-- **Koffy Web**: user center and administration console built with React, Vite, and TypeScript.
-- **LiteLLM integration**: routes requests to OpenAI-compatible model providers.
-- **Optional integrations**: WeChat login, WeChat Pay, Tencent CAPTCHA, and SMS through a Casdoor SMS provider.
+开发 Koffy 的初衷，是我们需要一套能够让多种 AI 应用灵活接入的公共底座：不同应用共享同一套用户身份和资产体系；不同模型供应商可以被统一调度、计量和计费；用户可以通过国内常用的登录与支付方式完成注册、充值和购买套餐；产品采用“先充值或购买套餐，再按量使用”的模式，而不是要求用户绑定信用卡并持续订阅。
 
-## Architecture
+我们没有找到一个开源项目能同时覆盖统一鉴权、多应用接入、模型路由、精确计费、套餐权益、国内支付和国内用户习惯，因此开发并开源了 Koffy。它不是某个 AI 产品的外壳，而是可以被多个 AI 产品共同使用的基础设施。
+
+## Koffy 能做什么
+
+- **统一用户体系**：多个 AI 应用共享 Casdoor 身份、Koffy 用户中心和登录状态。
+- **多应用隔离**：每个业务应用拥有独立 App Key、定价、套餐、模型权限和调用记录。
+- **统一模型网关**：提供 OpenAI 兼容接口，通过 LiteLLM 接入不同模型供应商。
+- **精确计量计费**：支持 token、图片、视频时长和业务单位，采用预授权、结算、取消的完整账务流程。
+- **点数与套餐权益**：同时支持充值余额和按月套餐额度，保留不可变流水，便于审计与追踪。
+- **国内化账号体验**：支持手机号注册、登录、找回密码、短信验证、微信登录和可选的腾讯验证码。
+- **国内化支付方式**：内置微信支付 Native 与 JSAPI 流程，适合充值后使用的消费模式。
+- **可视化运营后台**：管理应用、定价、套餐、用户资产、调用、支付、模型路由和品牌资源。
+- **可自托管与可换品牌**：用户中心和管理后台可分别上传 Logo 与 favicon，升级镜像不会覆盖线上品牌。
+
+## 系统架构
 
 ```mermaid
 flowchart LR
-    User[User or business app] --> Web[Koffy Web]
-    User --> Gateway[Koffy Gateway]
+    User[用户或业务应用] --> Nginx[HTTPS / Nginx]
+    Nginx --> Web[Koffy Web]
+    Nginx --> Gateway[Koffy Gateway]
+    Nginx --> Casdoor[Casdoor]
     Web --> Billing[Koffy Billing API]
     Gateway --> Billing
     Gateway --> LiteLLM[LiteLLM]
-    LiteLLM --> Provider[Model provider]
+    LiteLLM --> Models[模型供应商]
     Billing --> MySQL[(MySQL)]
     Billing --> Redis[(Redis)]
-    Billing --> Casdoor[Your Casdoor deployment]
+    Billing --> Casdoor
+    Billing -. 可选 .-> WeChat[微信登录 / 微信支付]
+    Billing -. 可选 .-> SMS[短信 / 腾讯验证码]
 ```
 
-See [docs/architecture.md](docs/architecture.md) for service boundaries and request flows.
+Koffy 将身份、账务和模型流量拆成清晰的服务边界：
 
-## Quick Start
+| 组件 | 职责 |
+| --- | --- |
+| Koffy Web | 用户中心和管理后台 |
+| Koffy Billing API | 用户映射、会话、点数、套餐、权益、订单、支付和管理接口 |
+| Koffy Gateway | 应用鉴权、用户鉴权、限流、模型路由、用量预授权与结算 |
+| Casdoor | 用户身份、密码、组织、第三方登录和可选短信发送 |
+| LiteLLM | 模型供应商适配和上游请求 |
+| MySQL / Redis | 持久账务数据、Casdoor 数据、会话和临时控制状态 |
 
-### Prerequisites
+详细设计见 [架构文档](docs/architecture.md)。
 
-- Docker Engine 24+ with Docker Compose v2
-- The Casdoor organization and application settings described below
-- A Casdoor organization, application, client ID, client secret, and application certificate
+## 一次 AI 调用如何计费
 
-### 1. Start the local dependencies
+```mermaid
+sequenceDiagram
+    participant A as AI 应用
+    participant G as Koffy Gateway
+    participant B as Billing API
+    participant L as LiteLLM
+
+    A->>G: App Key + 用户身份 + 请求幂等键
+    G->>B: 按预计用量预授权
+    B-->>G: 返回预授权记录
+    G->>L: 转发模型请求
+    alt 调用成功
+        L-->>G: 响应和真实用量
+        G->>B: 按真实用量结算
+        G-->>A: 返回模型响应和计费信息
+    else 调用失败
+        G->>B: 取消预授权并释放点数
+        G-->>A: 返回上游错误
+    end
+```
+
+应用、用户和幂等键共同标识一次逻辑请求。即使上游重试，也不会重复扣费。
+
+## 五分钟本地启动
+
+### 前置条件
+
+- Docker Engine 24+
+- Docker Compose v2
+
+Koffy **依赖 Casdoor**。本地 Compose 会启动一个空的 Casdoor 容器，但不会替你创建组织、应用和证书，这部分需要在 Casdoor 后台完成。
+
+### 1. 启动基础服务
 
 ```bash
 cp .env.example .env
 docker compose -f docker-compose.local.yml up -d mysql redis casdoor litellm
 ```
 
-Open `http://localhost:8000` and initialize Casdoor. Create an organization and application, enable the password grant required by Koffy's phone/password login, and add this redirect URL:
+打开 `http://localhost:8000` 初始化 Casdoor，然后：
 
-```text
-http://localhost:3000/auth/callback
-```
+1. 创建组织和应用。
+2. 添加回调地址 `http://localhost:3000/auth/callback`。
+3. 启用 Koffy 手机号/密码登录所需的密码授权模式。
+4. 将 Client ID、Client Secret、应用证书、组织名和应用名填入 `.env`。
+5. 如需短信验证码，在 Casdoor 创建短信 Provider，并填写 `REGISTRATION_SMS_PROVIDER`。
 
-Copy the Casdoor client ID, client secret, certificate, organization name, and application name into `.env`. Detailed settings are in [docs/deployment.md](docs/deployment.md#casdoor-setup).
-
-### 2. Start Koffy
+### 2. 启动完整 Koffy
 
 ```bash
 docker compose -f docker-compose.local.yml up --build -d
 ```
 
-The first MySQL startup applies `migrations/001_init.sql` and the local demo data in `migrations/002_seed_local.sql`.
-
-| Service | URL |
+| 服务 | 地址 |
 | --- | --- |
 | Koffy Web | `http://localhost:3000` |
 | Billing API | `http://localhost:8080` |
@@ -70,16 +121,11 @@ The first MySQL startup applies `migrations/001_init.sql` and the local demo dat
 | Casdoor | `http://localhost:8000` |
 | LiteLLM | `http://localhost:4000` |
 
-Check that the APIs are ready:
+首次启动 MySQL 时会自动执行 `migrations/001_init.sql` 和本地演示数据 `migrations/002_seed_local.sql`。
 
-```bash
-curl http://localhost:8080/readyz
-curl http://localhost:8081/readyz
-```
+### 3. 测试网关
 
-### 3. Test the gateway
-
-Local mode accepts `X-User-ID` for development. The seed creates the application key `local-dev-app-key` and user `demo-user`.
+本地模式允许使用 `X-User-ID`。演示数据包含应用密钥 `local-dev-app-key` 和用户 `demo-user`：
 
 ```bash
 curl http://localhost:8081/v1/chat/completions \
@@ -87,56 +133,54 @@ curl http://localhost:8081/v1/chat/completions \
   -H 'X-App-Key: local-dev-app-key' \
   -H 'X-User-ID: demo-user' \
   -H 'Idempotency-Key: quick-start-001' \
-  -d '{"model":"openai-chat-default","messages":[{"role":"user","content":"hello"}]}'
+  -d '{"model":"openai-chat-default","messages":[{"role":"user","content":"你好"}]}'
 ```
 
-Set a real `OPENAI_API_KEY` in `.env` to receive a model response. With the placeholder value, the provider call fails and Koffy releases the reserved points as designed.
+在 `.env` 中配置真实 `OPENAI_API_KEY` 后可获得模型响应。使用占位密钥时，上游调用会失败，Koffy 会按设计释放预授权点数。
 
-## Production
+## 生产部署
 
-The production Compose example starts the complete stack on a blank Docker host. Prepare the environment, private runtime configs, and TLS certificates first:
+生产 Compose 面向一台空白 Docker 主机，一次启动 MySQL、Redis、Casdoor、LiteLLM、Koffy 和 Nginx：
 
 ```bash
 cp production.env.example production.env
 cp deployments/nginx/koffy.example.com.conf.example deployments/nginx/koffy.conf
 cp deployments/litellm/config.example.yaml deployments/litellm/config.yaml
-# Edit production.env and the copied configs; place certificates in ./certs.
+# 修改域名、证书路径、模型路由和所有 replace-me 配置，并把证书放入 ./certs。
 docker compose --env-file production.env -f docker-compose.prod.example.yml up -d
 ```
 
-On the first MySQL startup, Compose creates the `koffy` and `casdoor` databases and applies `migrations/001_init.sql`. It never loads local demo data in production. Nginx exposes the fresh Casdoor service before Koffy is healthy; complete the organization/application setup, update `production.env`, and recreate the three Koffy application containers.
+生产首次启动只执行 `001_init.sql`，不会写入本地演示数据。Nginx 不等待 Koffy 应用健康即可提供 Casdoor 入口；完成组织和应用配置后，将凭据写入 `production.env` 并重新创建三个 Koffy 应用容器。
 
-Do not expose the Billing API directly. The included Nginx example routes `/api/` and `/auth/` through the same HTTPS origin as Koffy Web so session cookies work correctly.
+线上个性化数据不会被镜像升级覆盖：Logo、favicon、头像和业务数据保存在 MySQL 卷；Nginx、LiteLLM、证书、支付密钥和 `production.env` 保存在 Git 忽略的宿主机文件中。升级时不要执行 `docker compose down -v`。
 
-See [docs/deployment.md](docs/deployment.md) for the complete production checklist.
+完整步骤见 [部署文档](docs/deployment.md)。
 
-## Development
+## 可选集成
 
-```bash
-go test ./...
+- Casdoor 短信 Provider
+- 腾讯云验证码
+- 微信公众号网页授权
+- 微信开放平台网站扫码登录
+- 微信支付 Native / JSAPI
+- LiteLLM 支持的模型供应商
 
-cd web
-npm ci
-npm run dev
-```
+这些能力默认关闭或使用中性占位配置，不影响核心账号、账务和网关功能。
 
-The Vite development server proxies `/api` and `/auth` to `http://localhost:8080` by default.
+## 项目状态
 
-## Documentation
+当前版本为 **v0.1.0**。在 v1.0 之前，接口和部署约定仍可能演进；涉及生产支付和真实资产时，请先完成安全审查、备份和恢复演练。
 
-- [Architecture](docs/architecture.md)
-- [Chinese project introduction](README.zh-CN.md)
-- [Deployment and Casdoor setup](docs/deployment.md)
-- [Application integration](docs/app-integration.md)
-- [API reference](docs/api.md)
-- [Brand and UI customization](docs/brand-ui-style-guide.md)
-- [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
+## 文档
 
-## Status
+- [架构说明](docs/architecture.md)
+- [部署与 Casdoor 配置](docs/deployment.md)
+- [业务应用接入](docs/app-integration.md)
+- [API 参考](docs/api.md)
+- [品牌与 UI 定制](docs/brand-ui-style-guide.md)
+- [安全策略](SECURITY.md)
+- [贡献指南](CONTRIBUTING.md)
 
-Koffy is currently **v0.1.0**. Interfaces may evolve before v1.0. Review the security and operational assumptions before using it for production payments.
+## 开源协议
 
-## License
-
-Licensed under the [Apache License 2.0](LICENSE).
+Koffy 使用 [Apache License 2.0](LICENSE) 开源。
