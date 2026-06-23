@@ -1,0 +1,52 @@
+# Environment and secrets
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+secrets/
+certs/
+deployments/nginx/koffy.conf
+deployments/litellm/config.yaml
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Go build and test output
+/billing-api
+/koffy-billing-api
+/koffy-gateway
+*.test
+*.out
+coverage/
+
+# Frontend dependencies and output
+web/node_modules/
+web/dist/
+web/.vite/
+web/coverage/
+
+# Database exports and local data
+*.sql.gz
+*.dump
+*.bak
+data/
+
+# Logs and temporary files
+*.log
+tmp/
+.tmp/
+
+# IDE and OS metadata
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local tooling
+.codex/
+.agents/

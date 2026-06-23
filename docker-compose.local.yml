@@ -1,0 +1,155 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-root-me}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-koffy}
+      MYSQL_USER: ${MYSQL_USER:-koffy_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # Applied only when mysql_data is empty, in filename order.
+      - ./deployments/mysql/000-create-databases.sh:/docker-entrypoint-initdb.d/000-create-databases.sh:ro
+      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./migrations/002_seed_local.sql:/docker-entrypoint-initdb.d/002_seed_local.sql:ro
+    networks:
+      - koffy_local
+
+  redis:
+    image: redis:8.4-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - koffy_local
+
+  casdoor:
+    # Empty Casdoor instance. Users must initialize its organization and app.
+    image: casbin/casdoor:3.60.2
+    container_name: casdoor
+    restart: unless-stopped
+    environment:
+      driverName: mysql
+      dataSourceName: ${MYSQL_USER:-koffy_user}:${MYSQL_PASSWORD:-change-me}@tcp(mysql:3306)/
+      dbName: casdoor
+      origin: ${PUBLIC_CASDOOR_URL:-http://localhost:8000}
+      runmode: dev
+    depends_on:
+      - mysql
+    ports:
+      - "8000:8000"
+    networks:
+      - koffy_local
+
+  litellm:
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-latest}
+    container_name: litellm
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-change-me}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-change-litellm-master-key}
+    volumes:
+      - ./deployments/litellm/config.example.yaml:/app/config.yaml:ro
+    ports:
+      - "4000:4000"
+    networks:
+      - koffy_local
+
+  koffy-billing-api:
+    image: koffy-billing-api:local
+    build:
+      context: .
+      args:
+        APP: koffy-billing-api
+    container_name: koffy-billing-api
+    restart: unless-stopped
+    env_file:
+      - path: .env.example
+        required: true
+      - path: .env
+        required: false
+    environment:
+      BILLING_API_ADDR: :8080
+      MYSQL_HOST: mysql
+      REDIS_ADDR: redis:6379
+      CASDOOR_ENDPOINT: http://casdoor:8000
+      PUBLIC_WEB_URL: http://localhost:3000
+    depends_on:
+      - mysql
+      - redis
+      - casdoor
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/readyz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "8080:8080"
+    networks:
+      - koffy_local
+
+  koffy-gateway:
+    image: koffy-gateway:local
+    build:
+      context: .
+      args:
+        APP: koffy-gateway
+    container_name: koffy-gateway
+    restart: unless-stopped
+    env_file:
+      - path: .env.example
+        required: true
+      - path: .env
+        required: false
+    environment:
+      AI_GATEWAY_ADDR: :8081
+      LITELLM_BASE_URL: http://litellm:4000
+      BILLING_API_URL: http://koffy-billing-api:8080
+    depends_on:
+      - koffy-billing-api
+      - litellm
+      - mysql
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/readyz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "8081:8081"
+    networks:
+      - koffy_local
+
+  koffy-web:
+    image: koffy-web:local
+    build:
+      context: ./web
+    container_name: koffy-web
+    restart: unless-stopped
+    depends_on:
+      - koffy-billing-api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "3000:3000"
+    networks:
+      - koffy_local
+
+networks:
+  koffy_local:
+    name: koffy_local
+
+volumes:
+  mysql_data:

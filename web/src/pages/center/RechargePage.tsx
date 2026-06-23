@@ -1,0 +1,229 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Alert, App, Button, Card, Empty, Radio, Statistic, Typography } from "antd";
+import { CreditCard } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { api, startWeChatPayAuth } from "../../api/client";
+import type { RechargeOrderItem, WeChatJSPayment } from "../../api/types";
+import { cents, points, time } from "../../components/format";
+
+const amountOptions = [10, 30, 50, 100, 200, 500];
+const WECHAT_RECHARGE_PATH = "/center/recharge/";
+
+declare global {
+  interface Window {
+    WeixinJSBridge?: {
+      invoke: (
+        name: "getBrandWCPayRequest",
+        params: Omit<WeChatJSPayment, "channel">,
+        callback: (result: { err_msg?: string }) => void
+      ) => void;
+    };
+  }
+}
+
+export function RechargePage() {
+  const { message, modal } = App.useApp();
+  const queryClient = useQueryClient();
+  const [params] = useSearchParams();
+  const [amountYuan, setAmountYuan] = useState(30);
+  const [autoPayHandled, setAutoPayHandled] = useState(false);
+  const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
+  const orders = useQuery({
+    queryKey: ["recharge-orders"],
+    queryFn: () => api.rechargeOrders(50)
+  });
+  const mutation = useMutation({
+    mutationFn: ({ nextAmountYuan, wechatPayCode }: { nextAmountYuan: number; wechatPayCode?: string }) =>
+      api.createRechargeOrder({
+        amount_cents: nextAmountYuan * 100,
+        channel: isWeChatBrowser ? "wechat_jsapi" : "wechat_native",
+        description: "点数充值",
+        wechat_pay_code: wechatPayCode
+      }),
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: ["recharge-orders"] });
+      if (isWeChatBrowser && isWeChatJSPayment(data.payment)) {
+        try {
+          canonicalizeWeChatRechargeURL();
+          await invokeWeChatPay(data.payment);
+          await queryClient.invalidateQueries({ queryKey: ["recharge-orders"] });
+          message.success("支付已提交，请稍后查看到账结果");
+        } catch (error) {
+          message.warning(error instanceof Error ? error.message : "微信支付未完成");
+        }
+        return;
+      }
+      const nativeCodeURL = typeof data.payment?.code_url === "string" ? data.payment.code_url : "";
+      if (nativeCodeURL) {
+        modal.info({
+          className: "center-qr-modal",
+          icon: null,
+          title: "微信扫码支付",
+          width: 380,
+          content: (
+            <div className="qr-modal-content">
+              <div className="qr-wrap">
+                <QRCodeSVG value={nativeCodeURL} size={200} includeMargin />
+              </div>
+              <Typography.Text type="secondary">请使用微信扫码完成支付</Typography.Text>
+              <Typography.Text>{cents(data.amount_cents)}</Typography.Text>
+            </div>
+          ),
+          okText: "关闭"
+        });
+        message.success("订单已创建，请使用微信扫码支付");
+        return;
+      }
+      message.success("订单已创建，请按微信提示完成支付");
+    }
+  });
+
+  useEffect(() => {
+    if (!isWeChatBrowser || autoPayHandled) return;
+    const wechatPayCode = params.get("wechat_pay_code") || "";
+    if (params.get("wechat_pay") !== "1" || !wechatPayCode) return;
+    const nextAmount = Number(params.get("amount_yuan"));
+    const normalizedAmount = amountOptions.includes(nextAmount) ? nextAmount : amountYuan;
+    setAutoPayHandled(true);
+    setAmountYuan(normalizedAmount);
+    canonicalizeWeChatRechargeURL();
+    mutation.mutate({ nextAmountYuan: normalizedAmount, wechatPayCode });
+  }, [amountYuan, autoPayHandled, isWeChatBrowser, mutation, params]);
+
+  const handlePay = () => {
+    if (isWeChatBrowser) {
+      startWeChatPayAuth(`${WECHAT_RECHARGE_PATH}?wechat_pay=1&amount_yuan=${amountYuan}`);
+      return;
+    }
+    mutation.mutate({ nextAmountYuan: amountYuan });
+  };
+  const paidOrders = useMemo(() => (orders.data?.items || []).filter((item) => item.status === "paid"), [orders.data?.items]);
+
+  return (
+    <div className="page-stack">
+      <div className="page-title-row">
+        <h1 className="page-title">充值</h1>
+      </div>
+      <div className="center-module-grid">
+        <Card title="选择充值金额" className="recharge-card">
+          <div className="recharge-panel">
+            <Radio.Group
+              className="amount-grid"
+              value={amountYuan}
+              onChange={(event) => setAmountYuan(event.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+            >
+              {amountOptions.map((amount) => (
+                <Radio.Button key={amount} value={amount}>
+                  ¥{amount}
+                </Radio.Button>
+              ))}
+            </Radio.Group>
+            <div className="three-grid recharge-summary-grid">
+              <Card size="small">
+                <Statistic title="支付金额" value={amountYuan} prefix="¥" precision={2} />
+              </Card>
+              <Card size="small">
+                <Statistic title="到账点数" value={amountYuan * 100} formatter={(value) => points(Number(value))} />
+              </Card>
+            </div>
+            <Alert type="info" showIcon message="点数充值后不可退款、不可转赠，请确认金额后再支付。" />
+            <Button type="primary" size="large" loading={mutation.isPending} icon={<CreditCard size={16} />} onClick={handlePay}>
+              微信支付
+            </Button>
+          </div>
+        </Card>
+        <Card title="充值记录" className="record-list-card">
+          {orders.isPending ? (
+            <div className="record-list-placeholder">加载中...</div>
+          ) : paidOrders.length ? (
+            <div className="record-list">
+              {paidOrders.slice(0, 12).map((item) => (
+                <div className="record-row" key={item.id}>
+                  <div className="record-main">
+                    <div className="record-title">微信支付</div>
+                    <div className="record-meta">支付时间：{time(item.paid_at || item.created_at)}</div>
+                  </div>
+                  <div className="record-side">
+                    <div className="record-amount record-positive">+{points(item.coins)}</div>
+                    <div className="record-sub">{cents(item.amount_cents)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无充值记录" />
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function isWeChatJSPayment(value: unknown): value is WeChatJSPayment {
+  const payment = value as Partial<WeChatJSPayment> | undefined;
+  return (
+    payment?.channel === "wechat_jsapi" &&
+    typeof payment.appId === "string" &&
+    typeof payment.timeStamp === "string" &&
+    typeof payment.nonceStr === "string" &&
+    typeof payment.package === "string" &&
+    typeof payment.signType === "string" &&
+    typeof payment.paySign === "string"
+  );
+}
+
+function canonicalizeWeChatRechargeURL() {
+  if (window.location.pathname !== WECHAT_RECHARGE_PATH || window.location.search) {
+    window.history.replaceState(null, "", WECHAT_RECHARGE_PATH);
+  }
+}
+
+function invokeWeChatPay(payment: WeChatJSPayment) {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let timer: number | undefined;
+    const cleanup = () => {
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+      document.removeEventListener("WeixinJSBridgeReady", invoke);
+    };
+    const finish = (action: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      action();
+    };
+    const invoke = () => {
+      if (settled) return;
+      if (!window.WeixinJSBridge) {
+        return;
+      }
+      cleanup();
+      const { channel: _channel, ...payRequest } = payment;
+      window.WeixinJSBridge.invoke("getBrandWCPayRequest", payRequest, (result) => {
+        const message = result.err_msg || "";
+        if (message.includes(":ok")) {
+          finish(resolve);
+          return;
+        }
+        if (message.includes(":cancel")) {
+          finish(() => reject(new Error("已取消微信支付")));
+          return;
+        }
+        finish(() => reject(new Error("微信支付未完成，请重试")));
+      });
+    };
+    if (window.WeixinJSBridge) {
+      invoke();
+      return;
+    }
+    document.addEventListener("WeixinJSBridgeReady", invoke, { once: true });
+    timer = window.setTimeout(() => finish(() => reject(new Error("微信支付组件未就绪，请稍后重试"))), 30000);
+  });
+}

@@ -1,0 +1,18 @@
+model_list:
+  - model_name: openai-chat-default
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: openai-image-default
+    litellm_params:
+      model: openai/gpt-image-1
+      api_key: os.environ/OPENAI_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: null
+
+litellm_settings:
+  request_timeout: 300
+  num_retries: 2
+  set_verbose: false

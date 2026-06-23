@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Billing Gateway Console</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --line: #d7dce2;
+      --text: #18202b;
+      --muted: #687385;
+      --blue: #1769aa;
+      --green: #247f5a;
+      --red: #b43b3b;
+      --amber: #9a651c;
+      --shadow: 0 10px 28px rgba(35, 45, 60, .08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 24px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 { font-size: 19px; font-weight: 720; }
+    h2 { font-size: 16px; font-weight: 700; }
+    h3 { font-size: 13px; font-weight: 700; color: var(--muted); }
+
+    main {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      min-height: calc(100vh - 65px);
+    }
+
+    nav {
+      background: #ffffff;
+      border-right: 1px solid var(--line);
+      padding: 16px;
+    }
+
+    nav button {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      border-radius: 8px;
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+    }
+
+    nav button.active {
+      background: #e9f2fb;
+      border-color: #bdd7ee;
+      color: #0d548d;
+      font-weight: 700;
+    }
+
+    .content {
+      padding: 22px;
+      min-width: 0;
+    }
+
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+
+    .authbar {
+      display: grid;
+      grid-template-columns: 140px 120px minmax(220px, 1fr) 82px 82px 82px;
+      gap: 8px;
+      width: min(780px, 100%);
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #ffffff;
+      color: var(--text);
+      padding: 8px 10px;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 76px;
+      resize: vertical;
+    }
+
+    button.primary, button.secondary, button.danger {
+      min-height: 36px;
+      border-radius: 7px;
+      padding: 8px 12px;
+      border: 1px solid transparent;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.primary { background: var(--blue); color: #ffffff; }
+    button.secondary { background: #ffffff; border-color: var(--line); color: var(--text); }
+    button.danger { background: #fff1f1; border-color: #f0c4c4; color: var(--red); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .metric {
+      display: grid;
+      gap: 4px;
+    }
+
+    .metric strong {
+      font-size: 26px;
+      line-height: 1.15;
+    }
+
+    .muted { color: var(--muted); }
+    .ok { color: var(--green); }
+    .warn { color: var(--amber); }
+    .bad { color: var(--red); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 9px 8px;
+      border-bottom: 1px solid #edf0f3;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      background: #fafbfc;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      background: #f0f3f6;
+      padding: 2px 4px;
+      border-radius: 5px;
+    }
+
+    .notice {
+      border: 1px solid #c8d7e7;
+      background: #eff6fd;
+      color: #17476d;
+      padding: 10px 12px;
+      border-radius: 8px;
+      min-height: 38px;
+    }
+
+    .notice.error {
+      border-color: #efc2c2;
+      background: #fff4f4;
+      color: #8c2f2f;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 900px) {
+      header { align-items: flex-start; flex-direction: column; padding: 14px; }
+      main { grid-template-columns: 1fr; }
+      nav {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+      }
+      nav button { width: auto; white-space: nowrap; margin-bottom: 0; }
+      .content { padding: 14px; }
+      .authbar { grid-template-columns: 1fr; }
+      .span-4, .span-6, .span-8 { grid-column: span 12; }
+      table { min-width: 620px; }
+      .tablewrap { overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Billing Gateway Console</h1>
+      <p class="muted">用户资产、计费规则、AI 路由与充值管理</p>
+    </div>
+    <div class="authbar">
+      <label>用户 ID<input id="authUser" value="demo-user" autocomplete="off"></label>
+      <label>管理员<select id="authAdmin"><option value="">否</option><option value="true">是</option></select></label>
+      <label>Bearer Token<input id="authToken" type="password" placeholder="生产环境填写 Casdoor access token"></label>
+      <button class="secondary" id="loginBtn">登录</button>
+      <button class="secondary" id="logoutBtn">退出</button>
+      <button class="primary" id="refreshAll">刷新</button>
+    </div>
+  </header>
+
+  <main>
+    <nav>
+      <button class="active" data-view="user">用户中心</button>
+      <button data-view="admin">管理后台</button>
+      <button data-view="ai">AI 配置</button>
+      <button data-view="payments">充值测试</button>
+    </nav>
+
+    <section class="content">
+      <div id="notice" class="notice hidden"></div>
+
+      <section id="view-user" class="view stack">
+        <div class="topline">
+          <h2>用户中心</h2>
+          <button class="secondary" data-action="loadUser">刷新用户数据</button>
+        </div>
+        <div class="notice">
+          本地开发可直接使用顶部的用户 ID 和管理员开关；正式页面请使用 Koffy Web 的登录页。
+        </div>
+        <div class="grid">
+          <div class="panel span-4 metric">
+            <span class="muted">总余额</span>
+            <strong id="balanceCoins">-</strong>
+            <span class="muted">算力币</span>
+          </div>
+          <div class="panel span-4 metric">
+            <span class="muted">冻结中</span>
+            <strong id="reservedCoins">-</strong>
+            <span class="muted">预授权占用</span>
+          </div>
+          <div class="panel span-4 metric">
+            <span class="muted">可用余额</span>
+            <strong id="availableCoins">-</strong>
+            <span class="muted">可立即消费</span>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>用户资料</h3>
+            <div id="profileBox" class="muted">-</div>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>权益余额</h3>
+            <div class="tablewrap"><table id="entitlementsTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>钱包流水</h3>
+            <div class="tablewrap"><table id="ledgerTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>权益流水</h3>
+            <div class="tablewrap"><table id="entitlementLedgerTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>使用记录</h3>
+            <div class="tablewrap"><table id="usageRequestsTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>订阅套餐</h3>
+            <div class="tablewrap"><table id="subscriptionsTable"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-admin" class="view stack hidden">
+        <div class="topline">
+          <h2>管理后台</h2>
+          <button class="secondary" data-action="loadAdmin">刷新管理数据</button>
+        </div>
+        <div class="grid">
+          <div class="panel span-12 stack">
+            <h3>运营概览</h3>
+            <div class="row">
+              <label style="flex:1">天数<input id="metricsDays" type="number" value="7"></label>
+              <button class="secondary" data-action="loadMetrics">刷新概览</button>
+            </div>
+            <div class="tablewrap"><table id="usageMetricsTable"></table></div>
+            <div class="tablewrap"><table id="rechargeMetricsTable"></table></div>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>创建或更新应用</h3>
+            <label>App Code<input id="appCode" value="demo-app"></label>
+            <label>名称<input id="appName" value="Demo AI App"></label>
+            <label>扣费方式<select id="billingMode"><option value="hybrid">hybrid</option><option value="coins">coins</option><option value="entitlement">entitlement</option></select></label>
+            <label>描述<textarea id="appDesc">Local development demo app</textarea></label>
+            <button class="primary" data-action="saveApp">保存应用</button>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>API Key 与定价</h3>
+            <label>App Code<input id="keyAppCode" value="demo-app"></label>
+            <button class="secondary" data-action="createKey">生成 API Key</button>
+            <div id="newKeyBox" class="notice hidden"></div>
+            <label>模型别名<input id="pricingModel" value="*"></label>
+            <div class="row">
+              <label style="flex:1">Token 数<input id="pricingTokens" type="number" value="1000"></label>
+              <label style="flex:1">算力币<input id="pricingCoins" type="number" value="1"></label>
+            </div>
+            <button class="primary" data-action="savePricing">保存 Token 定价</button>
+            <label>单位<select id="unitPricingUnit"><option value="images">images</option><option value="video_seconds">video_seconds</option><option value="business_units">business_units</option></select></label>
+            <div class="row">
+              <label style="flex:1">单位数量<input id="unitPricingAmount" type="number" value="1"></label>
+              <label style="flex:1">算力币<input id="unitPricingCoins" type="number" value="20"></label>
+            </div>
+            <button class="primary" data-action="saveUnitPricing">保存单位定价</button>
+            <button class="secondary" data-action="loadPricing">查看定价</button>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>Token 定价</h3>
+            <div class="tablewrap"><table id="tokenPricingTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>单位定价</h3>
+            <div class="tablewrap"><table id="unitPricingTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>应用列表</h3>
+            <div class="tablewrap"><table id="appsTable"></table></div>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>套餐配置</h3>
+            <label>App Code<input id="planAppCode" value="demo-app"></label>
+            <label>套餐 Code<input id="planCode" value="starter"></label>
+            <label>名称<input id="planName" value="Starter Monthly"></label>
+            <label>周期<select id="planPeriod"><option value="monthly">monthly</option><option value="yearly">yearly</option></select></label>
+            <label>价格/分<input id="planPriceCents" type="number" value="990"></label>
+            <button class="primary" data-action="savePlan">保存套餐</button>
+            <button class="secondary" data-action="loadPlans">查看套餐</button>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>套餐权益与开通</h3>
+            <label>权益 Code<input id="entitlementCode" value="monthly_tokens"></label>
+            <label>权益名称<input id="entitlementName" value="Monthly Tokens"></label>
+            <label>单位<select id="entitlementUnit"><option value="tokens">tokens</option><option value="images">images</option><option value="video_seconds">video_seconds</option><option value="business_units">business_units</option></select></label>
+            <label>每月额度<input id="monthlyQuota" type="number" value="200000"></label>
+            <button class="primary" data-action="savePlanEntitlement">保存权益</button>
+            <div class="row">
+              <label style="flex:1">用户 ID<input id="grantUser" value="demo-user"></label>
+              <label style="flex:1">月数<input id="grantMonths" type="number" value="1"></label>
+            </div>
+            <button class="primary" data-action="grantSubscription">开通套餐</button>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>权益维护</h3>
+            <button class="secondary" data-action="runEntitlementMaintenance">执行维护</button>
+            <pre id="maintenanceBox" class="notice">-</pre>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>套餐列表</h3>
+            <div class="tablewrap"><table id="plansTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>调用记录</h3>
+            <div class="row">
+              <label style="flex:1">App Code<input id="usageFilterApp" value="demo-app"></label>
+              <label style="flex:1">用户 ID<input id="usageFilterUser" placeholder="留空查看全部"></label>
+              <button class="secondary" data-action="loadAdminUsage">查询</button>
+            </div>
+            <div class="tablewrap"><table id="adminUsageTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>充值订单</h3>
+            <div class="row">
+              <label style="flex:1">用户 ID<input id="orderFilterUser" placeholder="留空查看全部"></label>
+              <label style="flex:1">状态<select id="orderFilterStatus"><option value="">全部</option><option value="pending">pending</option><option value="paid">paid</option><option value="closed">closed</option><option value="failed">failed</option></select></label>
+              <button class="secondary" data-action="loadAdminPayments">查询</button>
+            </div>
+            <div class="tablewrap"><table id="adminOrdersTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>支付事件</h3>
+            <div class="row">
+              <label style="flex:1">订单号<input id="eventFilterOrderNo" placeholder="留空查看全部"></label>
+              <button class="secondary" data-action="loadAdminPayments">查询</button>
+            </div>
+            <div class="tablewrap"><table id="paymentEventsTable"></table></div>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>查询用户资产</h3>
+            <label>Casdoor 用户 ID<input id="assetUser" value="demo-user"></label>
+            <button class="secondary" data-action="loadAsset">查询资产</button>
+            <pre id="assetBox" class="notice">-</pre>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>后台调账</h3>
+            <label>Casdoor 用户 ID<input id="adjustUser" value="demo-user"></label>
+            <label>算力币增减<input id="adjustCoins" type="number" value="50"></label>
+            <label>备注<input id="adjustRemark" value="manual adjustment"></label>
+            <button class="primary" data-action="adjustCoins">提交调账</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-ai" class="view stack hidden">
+        <div class="topline">
+          <h2>AI 配置</h2>
+          <button class="secondary" data-action="loadAI">刷新 AI 配置</button>
+        </div>
+        <div class="grid">
+          <div class="panel span-4 stack">
+            <h3>供应商</h3>
+            <label>Provider Code<input id="providerCode" value="openai"></label>
+            <label>名称<input id="providerName" value="OpenAI via LiteLLM"></label>
+            <label>状态<select id="providerStatus"><option value="active">active</option><option value="disabled">disabled</option></select></label>
+            <label>Base URL<input id="providerBaseURL" value="https://api.openai.com"></label>
+            <button class="primary" data-action="saveProvider">保存供应商</button>
+          </div>
+          <div class="panel span-4 stack">
+            <h3>模型</h3>
+            <label>Provider Code<input id="modelProviderCode" value="openai"></label>
+            <label>模型别名<input id="modelAlias" value="openai-chat-default"></label>
+            <label>供应商模型<input id="providerModel" value="gpt-4o-mini"></label>
+            <label>能力<select id="modelCapability"><option value="chat">chat</option><option value="image">image</option><option value="audio">audio</option><option value="video">video</option><option value="embedding">embedding</option></select></label>
+            <label>状态<select id="modelStatus"><option value="active">active</option><option value="disabled">disabled</option></select></label>
+            <button class="primary" data-action="saveModel">保存模型</button>
+          </div>
+          <div class="panel span-4 stack">
+            <h3>应用模型路由</h3>
+            <label>App Code<input id="routeAppCode" value="demo-app"></label>
+            <label>模型别名<input id="routeModelAlias" value="openai-chat-default"></label>
+            <label>状态<select id="routeStatus"><option value="active">active</option><option value="disabled">disabled</option></select></label>
+            <button class="primary" data-action="saveRoute">保存路由</button>
+            <button class="secondary" data-action="loadRoutes">查看路由</button>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>供应商列表</h3>
+            <div class="tablewrap"><table id="providersTable"></table></div>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>模型列表</h3>
+            <div class="tablewrap"><table id="modelsTable"></table></div>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>应用模型路由</h3>
+            <div class="tablewrap"><table id="routesTable"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-payments" class="view stack hidden">
+        <div class="topline">
+          <h2>充值测试</h2>
+          <button class="secondary" data-action="loadUser">刷新余额</button>
+        </div>
+        <div class="grid">
+          <div class="panel span-6 stack">
+            <h3>创建充值订单</h3>
+            <label>金额/分<input id="rechargeCents" type="number" value="100"></label>
+            <label>渠道<select id="rechargeChannel"><option value="wechat_native">wechat_native</option><option value="wechat_jsapi">wechat_jsapi</option></select></label>
+            <label>OpenID<input id="rechargeOpenID" placeholder="JSAPI 必填"></label>
+            <label>描述<input id="rechargeDesc" value="compute coin recharge"></label>
+            <button class="primary" data-action="createRecharge">创建订单</button>
+            <pre id="rechargeBox" class="notice">-</pre>
+          </div>
+          <div class="panel span-6 stack">
+            <h3>本地微信通知</h3>
+            <label>订单号<input id="notifyOrderNo"></label>
+            <label>事件 ID<input id="notifyEventID" value="evt-console-local-001"></label>
+            <label>微信交易号<input id="notifyTransactionID" value="wx-console-local-tx-001"></label>
+            <button class="primary" data-action="sendLocalNotify">发送成功通知</button>
+            <button class="secondary" data-action="sendLocalNotify">重复发送</button>
+          </div>
+          <div class="panel span-12 stack">
+            <h3>充值订单</h3>
+            <div class="tablewrap"><table id="rechargeOrdersTable"></table></div>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { lastOrderNo: "" };
+
+    function headers(json = false) {
+      const h = {};
+      const token = $("authToken").value.trim();
+      const user = $("authUser").value.trim();
+      const admin = $("authAdmin").value;
+      if (json) h["Content-Type"] = "application/json";
+      if (token) h.Authorization = "Bearer " + token;
+      if (user) h["X-User-ID"] = user;
+      if (admin) h["X-Admin"] = admin;
+      return h;
+    }
+
+    async function api(path, options = {}) {
+      const resp = await fetch(path, {
+        ...options,
+        headers: { ...headers(Boolean(options.body)), ...(options.headers || {}) }
+      });
+      const text = await resp.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!resp.ok) {
+        const msg = data.error ? `${data.error.code}: ${data.error.message}` : resp.statusText;
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    function showNotice(message, isError = false) {
+      const box = $("notice");
+      box.textContent = message;
+      box.className = "notice" + (isError ? " error" : "");
+      if (message) setTimeout(() => box.classList.add("hidden"), 4600);
+    }
+
+    function fmt(value) {
+      if (value === null || value === undefined || value === "") return "-";
+      return String(value);
+    }
+
+    function table(id, columns, rows) {
+      const head = `<thead><tr>${columns.map(c => `<th>${c.label}</th>`).join("")}</tr></thead>`;
+      const bodyRows = (rows || []).map(row => {
+        return `<tr>${columns.map(c => `<td>${fmt(c.render ? c.render(row) : row[c.key])}</td>`).join("")}</tr>`;
+      }).join("");
+      $(id).innerHTML = head + `<tbody>${bodyRows || `<tr><td colspan="${columns.length}" class="muted">暂无数据</td></tr>`}</tbody>`;
+    }
+
+    async function loadUser() {
+      const [me, wallet, ledger, subs, ents, entitlementLedger, usageRequests, rechargeOrders] = await Promise.all([
+        api("/api/v1/me"),
+        api("/api/v1/me/wallet"),
+        api("/api/v1/me/wallet/ledger?limit=20"),
+        api("/api/v1/me/subscriptions"),
+        api("/api/v1/me/entitlements"),
+        api("/api/v1/me/entitlement-ledger?limit=20"),
+        api("/api/v1/me/usage-requests?limit=20"),
+        api("/api/v1/me/recharge-orders?limit=20")
+      ]);
+      $("balanceCoins").textContent = wallet.balance_coins;
+      $("reservedCoins").textContent = wallet.reserved_coins;
+      $("availableCoins").textContent = wallet.available_coins;
+      $("profileBox").innerHTML = [
+        `ID: <code>${me.casdoor_user_id}</code>`,
+        `名称: ${fmt(me.display_name || me.name)}`,
+        `邮箱: ${fmt(me.email)}`,
+        `管理员: ${me.is_admin ? "<span class='ok'>是</span>" : "否"}`
+      ].join("<br>");
+      table("ledgerTable", [
+        { label: "时间", key: "created_at" },
+        { label: "方向", key: "direction" },
+        { label: "原因", key: "reason" },
+        { label: "数量", key: "amount_coins" },
+        { label: "余额", key: "balance_after" },
+        { label: "备注", key: "remark" }
+      ], ledger.items);
+      table("subscriptionsTable", [
+        { label: "应用", key: "app_code" },
+        { label: "套餐", key: "plan_name" },
+        { label: "状态", key: "status" },
+        { label: "开始", key: "starts_at" },
+        { label: "结束", key: "ends_at" }
+      ], subs.items);
+      table("entitlementsTable", [
+        { label: "应用", key: "app_code" },
+        { label: "权益", key: "entitlement_code" },
+        { label: "周期", key: "period_month" },
+        { label: "可用", key: "available" }
+      ], ents.items);
+      table("entitlementLedgerTable", [
+        { label: "时间", key: "created_at" },
+        { label: "应用", key: "app_code" },
+        { label: "权益", key: "entitlement_code" },
+        { label: "单位", key: "unit" },
+        { label: "方向", key: "direction" },
+        { label: "数量", key: "amount" },
+        { label: "使用后", key: "used_after" },
+        { label: "冻结后", key: "reserved_after" }
+      ], entitlementLedger.items);
+      table("usageRequestsTable", usageColumns(false), usageRequests.items);
+      table("rechargeOrdersTable", orderColumns(false), rechargeOrders.items);
+    }
+
+    async function loadAdmin() {
+      const apps = await api("/api/v1/admin/apps");
+      table("appsTable", [
+        { label: "App Code", key: "app_code" },
+        { label: "名称", key: "name" },
+        { label: "状态", key: "status" },
+        { label: "扣费", key: "billing_mode" },
+        { label: "描述", key: "description" }
+      ], apps.items);
+      await loadMetrics();
+      await loadPricing();
+      await loadPlans();
+      await loadAdminUsage();
+      await loadAdminPayments();
+    }
+
+    async function loadPricing() {
+      const appCode = $("keyAppCode").value.trim() || "demo-app";
+      const data = await api(`/api/v1/admin/apps/${encodeURIComponent(appCode)}/pricing`);
+      table("tokenPricingTable", [
+        { label: "模型", key: "model_alias" },
+        { label: "Token 数", key: "token_amount" },
+        { label: "算力币", key: "coin_amount" },
+        { label: "状态", key: "status" },
+        { label: "生效时间", key: "effective_from" }
+      ], data.token_pricing);
+      table("unitPricingTable", [
+        { label: "模型", key: "model_alias" },
+        { label: "单位", key: "unit" },
+        { label: "单位数量", key: "unit_amount" },
+        { label: "算力币", key: "coin_amount" },
+        { label: "状态", key: "status" },
+        { label: "生效时间", key: "effective_from" }
+      ], data.unit_pricing);
+    }
+
+    async function loadMetrics() {
+      const days = Number($("metricsDays").value) || 7;
+      const data = await api(`/api/v1/admin/metrics/summary?days=${encodeURIComponent(days)}`);
+      table("usageMetricsTable", [
+        { label: "应用", key: "app_code" },
+        { label: "请求数", key: "request_count" },
+        { label: "成功", key: "committed_count" },
+        { label: "取消", key: "cancelled_count" },
+        { label: "扣币", key: "charged_coins" },
+        { label: "扣权益", key: "charged_units" },
+        { label: "Tokens", key: "actual_total_tokens" },
+        { label: "图片", key: "actual_images" },
+        { label: "视频秒", key: "actual_video_seconds" },
+        { label: "业务量", key: "actual_business_units" }
+      ], data.usage_by_app);
+      table("rechargeMetricsTable", [
+        { label: "充值状态", key: "status" },
+        { label: "订单数", key: "order_count" },
+        { label: "金额/分", key: "amount_cents" },
+        { label: "算力币", key: "coins" }
+      ], data.recharge_by_status);
+    }
+
+    async function loadPlans() {
+      const appCode = $("planAppCode").value.trim() || "demo-app";
+      const plans = await api(`/api/v1/admin/apps/${encodeURIComponent(appCode)}/plans`);
+      table("plansTable", [
+        { label: "套餐", key: "plan_code" },
+        { label: "名称", key: "name" },
+        { label: "周期", key: "period" },
+        { label: "价格/分", key: "price_cents" },
+        { label: "状态", key: "status" },
+        { label: "权益", render: row => (row.entitlements || []).map(item => `${item.entitlement_code}: ${item.monthly_quota} ${item.unit}`).join("; ") }
+      ], plans.items);
+    }
+
+    async function loadAI() {
+      const [providers, models] = await Promise.all([
+        api("/api/v1/admin/ai/providers"),
+        api("/api/v1/admin/ai/models")
+      ]);
+      table("providersTable", [
+        { label: "Code", key: "provider_code" },
+        { label: "名称", key: "name" },
+        { label: "状态", key: "status" },
+        { label: "Base URL", key: "base_url" }
+      ], providers.items);
+      table("modelsTable", [
+        { label: "别名", key: "model_alias" },
+        { label: "供应商", key: "provider_code" },
+        { label: "真实模型", key: "provider_model" },
+        { label: "能力", key: "capability" },
+        { label: "状态", key: "status" }
+      ], models.items);
+      await loadRoutes();
+    }
+
+    async function loadRoutes() {
+      const appCode = $("routeAppCode").value.trim() || "demo-app";
+      const routes = await api(`/api/v1/admin/apps/${encodeURIComponent(appCode)}/model-routes`);
+      table("routesTable", [
+        { label: "应用", key: "app_code" },
+        { label: "模型", key: "model_alias" },
+        { label: "供应商", key: "provider_code" },
+        { label: "真实模型", key: "provider_model" },
+        { label: "能力", key: "capability" },
+        { label: "状态", key: "status" }
+      ], routes.items);
+    }
+
+    function usageColumns(includeUser) {
+      const columns = [
+        { label: "时间", key: "created_at" },
+        { label: "应用", key: "app_code" }
+      ];
+      if (includeUser) columns.push({ label: "用户", key: "user_id" });
+      columns.push(
+        { label: "状态", key: "status" },
+        { label: "模式", key: "billing_mode" },
+        { label: "模型", key: "model_alias" },
+        { label: "预留币", key: "reserved_coins" },
+        { label: "扣币", key: "charged_coins" },
+        { label: "预留权益", key: "reserved_units" },
+        { label: "扣权益", key: "charged_units" },
+        { label: "实际 Tokens", key: "actual_total_tokens" },
+        { label: "图片", key: "actual_images" },
+        { label: "视频秒", key: "actual_video_seconds" },
+        { label: "业务量", key: "actual_business_units" },
+        { label: "错误", key: "error_message" }
+      );
+      return columns;
+    }
+
+    async function loadAdminUsage() {
+      const params = new URLSearchParams({ limit: "50" });
+      const appCode = $("usageFilterApp").value.trim();
+      const userID = $("usageFilterUser").value.trim();
+      if (appCode) params.set("app_code", appCode);
+      if (userID) params.set("user_id", userID);
+      const data = await api(`/api/v1/admin/usage-requests?${params.toString()}`);
+      table("adminUsageTable", usageColumns(true), data.items);
+    }
+
+    function orderColumns(includeUser) {
+      const columns = [
+        { label: "时间", key: "created_at" },
+        { label: "订单号", key: "order_no" }
+      ];
+      if (includeUser) columns.push({ label: "用户", key: "user_id" });
+      columns.push(
+        { label: "金额/分", key: "amount_cents" },
+        { label: "算力币", key: "coins" },
+        { label: "状态", key: "status" },
+        { label: "微信交易号", key: "provider_trade_no" },
+        { label: "支付时间", key: "paid_at" }
+      );
+      return columns;
+    }
+
+    async function loadAdminPayments() {
+      const orderParams = new URLSearchParams({ limit: "50" });
+      const userID = $("orderFilterUser").value.trim();
+      const status = $("orderFilterStatus").value;
+      if (userID) orderParams.set("user_id", userID);
+      if (status) orderParams.set("status", status);
+      const eventParams = new URLSearchParams({ limit: "50" });
+      const orderNo = $("eventFilterOrderNo").value.trim();
+      if (orderNo) eventParams.set("order_no", orderNo);
+      const [orders, events] = await Promise.all([
+        api(`/api/v1/admin/recharge-orders?${orderParams.toString()}`),
+        api(`/api/v1/admin/payment-events?${eventParams.toString()}`)
+      ]);
+      table("adminOrdersTable", orderColumns(true), orders.items);
+      table("paymentEventsTable", [
+        { label: "时间", key: "created_at" },
+        { label: "事件 ID", key: "event_id" },
+        { label: "类型", key: "event_type" },
+        { label: "订单号", key: "order_no" },
+        { label: "交易号", key: "provider_trade_no" },
+        { label: "处理时间", key: "processed_at" }
+      ], events.items);
+    }
+
+    const actions = {
+      loadUser,
+      loadAdmin,
+      loadMetrics,
+      loadPlans,
+      loadPricing,
+      loadAI,
+      loadRoutes,
+      loadAdminUsage,
+      loadAdminPayments,
+      async saveApp() {
+        await api("/api/v1/admin/apps", {
+          method: "POST",
+          body: JSON.stringify({
+            app_code: $("appCode").value.trim(),
+            name: $("appName").value.trim(),
+            billing_mode: $("billingMode").value,
+            description: $("appDesc").value.trim()
+          })
+        });
+        await loadAdmin();
+        showNotice("应用已保存");
+      },
+      async createKey() {
+        const appCode = $("keyAppCode").value.trim();
+        const data = await api(`/api/v1/admin/apps/${encodeURIComponent(appCode)}/api-keys`, { method: "POST", body: "{}" });
+        $("newKeyBox").textContent = data.key;
+        $("newKeyBox").classList.remove("hidden");
+        showNotice("API Key 已生成，明文只显示一次");
+      },
+      async savePricing() {
+        const appCode = $("keyAppCode").value.trim();
+        await api(`/api/v1/admin/apps/${encodeURIComponent(appCode)}/pricing`, {
+          method: "POST",
+          body: JSON.stringify({
+            model_alias: $("pricingModel").value.trim(),
+            token_amount: Number($("pricingTokens").value),
+            coin_amount: Number($("pricingCoins").value)
+          })
+        });
+        await loadPricing();
+        showNotice("定价已保存");
+      },
+      async saveUnitPricing() {
+        const appCode = $("keyAppCode").value.trim();
+        await api(`/api/v1/admin/apps/${encodeURIComponent(appCode)}/unit-pricing`, {
+          method: "POST",
+          body: JSON.stringify({
+            model_alias: $("pricingModel").value.trim(),
+            unit: $("unitPricingUnit").value,
+            unit_amount: Number($("unitPricingAmount").value),
+            coin_amount: Number($("unitPricingCoins").value)
+          })
+        });
+        await loadPricing();
+        showNotice("单位定价已保存");
+      },
+      async savePlan() {
+        const appCode = $("planAppCode").value.trim();
+        await api(`/api/v1/admin/apps/${encodeURIComponent(appCode)}/plans`, {
+          method: "POST",
+          body: JSON.stringify({
+            plan_code: $("planCode").value.trim(),
+            name: $("planName").value.trim(),
+            period: $("planPeriod").value,
+            price_cents: Number($("planPriceCents").value),
+            status: "active"
+          })
+        });
+        await loadPlans();
+        showNotice("套餐已保存");
+      },
+      async savePlanEntitlement() {
+        const appCode = $("planAppCode").value.trim();
+        const planCode = $("planCode").value.trim();
+        await api(`/api/v1/admin/apps/${encodeURIComponent(appCode)}/plans/${encodeURIComponent(planCode)}/entitlements`, {
+          method: "POST",
+          body: JSON.stringify({
+            entitlement_code: $("entitlementCode").value.trim(),
+            name: $("entitlementName").value.trim(),
+            unit: $("entitlementUnit").value,
+            monthly_quota: Number($("monthlyQuota").value)
+          })
+        });
+        await loadPlans();
+        showNotice("套餐权益已保存");
+      },
+      async grantSubscription() {
+        const userID = $("grantUser").value.trim();
+        await api(`/api/v1/admin/users/${encodeURIComponent(userID)}/subscriptions`, {
+          method: "POST",
+          body: JSON.stringify({
+            app_code: $("planAppCode").value.trim(),
+            plan_code: $("planCode").value.trim(),
+            months: Number($("grantMonths").value)
+          })
+        });
+        await loadUser();
+        showNotice("套餐已开通，当月权益已发放");
+      },
+      async runEntitlementMaintenance() {
+        const data = await api("/api/v1/admin/entitlements/maintenance", { method: "POST" });
+        $("maintenanceBox").textContent = JSON.stringify(data, null, 2);
+        await loadUser();
+        await loadPlans();
+        showNotice("权益维护已完成");
+      },
+      async loadAsset() {
+        const userID = $("assetUser").value.trim();
+        const data = await api(`/api/v1/admin/users/${encodeURIComponent(userID)}/asset`);
+        $("assetBox").textContent = JSON.stringify(data, null, 2);
+      },
+      async adjustCoins() {
+        const userID = $("adjustUser").value.trim();
+        const data = await api(`/api/v1/admin/users/${encodeURIComponent(userID)}/adjust-coins`, {
+          method: "POST",
+          body: JSON.stringify({
+            amount_coins: Number($("adjustCoins").value),
+            remark: $("adjustRemark").value.trim()
+          })
+        });
+        showNotice(`调账完成，余额 ${data.balance_coins}`);
+      },
+      async saveProvider() {
+        await api("/api/v1/admin/ai/providers", {
+          method: "POST",
+          body: JSON.stringify({
+            provider_code: $("providerCode").value.trim(),
+            name: $("providerName").value.trim(),
+            status: $("providerStatus").value,
+            base_url: $("providerBaseURL").value.trim()
+          })
+        });
+        await loadAI();
+        showNotice("供应商已保存");
+      },
+      async saveModel() {
+        await api("/api/v1/admin/ai/models", {
+          method: "POST",
+          body: JSON.stringify({
+            provider_code: $("modelProviderCode").value.trim(),
+            model_alias: $("modelAlias").value.trim(),
+            provider_model: $("providerModel").value.trim(),
+            capability: $("modelCapability").value,
+            status: $("modelStatus").value
+          })
+        });
+        await loadAI();
+        showNotice("模型已保存");
+      },
+      async saveRoute() {
+        const appCode = $("routeAppCode").value.trim();
+        await api(`/api/v1/admin/apps/${encodeURIComponent(appCode)}/model-routes`, {
+          method: "POST",
+          body: JSON.stringify({
+            model_alias: $("routeModelAlias").value.trim(),
+            status: $("routeStatus").value
+          })
+        });
+        await loadRoutes();
+        showNotice("模型路由已保存");
+      },
+      async createRecharge() {
+        const data = await api("/api/v1/recharge/orders", {
+          method: "POST",
+          body: JSON.stringify({
+            amount_cents: Number($("rechargeCents").value),
+            channel: $("rechargeChannel").value,
+            openid: $("rechargeOpenID").value.trim(),
+            description: $("rechargeDesc").value.trim()
+          })
+        });
+        state.lastOrderNo = data.order_no;
+        $("notifyOrderNo").value = data.order_no;
+        $("rechargeBox").textContent = JSON.stringify(data, null, 2);
+        await loadUser();
+        showNotice("充值订单已创建");
+      },
+      async sendLocalNotify() {
+        const orderNo = $("notifyOrderNo").value.trim() || state.lastOrderNo;
+        const data = await api("/api/v1/payments/wechat/notify", {
+          method: "POST",
+          headers: { "X-WeChatPay-Test": "true" },
+          body: JSON.stringify({
+            event_id: $("notifyEventID").value.trim(),
+            event_type: "TRANSACTION.SUCCESS",
+            order_no: orderNo,
+            transaction_id: $("notifyTransactionID").value.trim(),
+            success_time: new Date().toISOString()
+          })
+        });
+        showNotice(`通知处理完成，入账 ${data.credited_coins}`);
+        await loadUser();
+        await loadAdminPayments();
+      }
+    };
+
+    document.querySelectorAll("nav button").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        document.querySelectorAll("nav button").forEach(item => item.classList.remove("active"));
+        btn.classList.add("active");
+        document.querySelectorAll(".view").forEach(view => view.classList.add("hidden"));
+        $("view-" + btn.dataset.view).classList.remove("hidden");
+        try {
+          if (btn.dataset.view === "user" || btn.dataset.view === "payments") await loadUser();
+          if (btn.dataset.view === "admin") await loadAdmin();
+          if (btn.dataset.view === "ai") await loadAI();
+        } catch (err) {
+          showNotice(err.message, true);
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-action]").forEach(el => {
+      el.addEventListener("click", async () => {
+        const fn = actions[el.dataset.action];
+        if (!fn) return;
+        el.disabled = true;
+        try {
+          await fn();
+        } catch (err) {
+          showNotice(err.message, true);
+        } finally {
+          el.disabled = false;
+        }
+      });
+    });
+
+    $("refreshAll").addEventListener("click", async () => {
+      try {
+        const view = document.querySelector("nav button.active").dataset.view;
+        if (view === "user" || view === "payments") await loadUser();
+        if (view === "admin") await loadAdmin();
+        if (view === "ai") await loadAI();
+        showNotice("已刷新");
+      } catch (err) {
+        showNotice(err.message, true);
+      }
+    });
+
+    $("loginBtn").addEventListener("click", () => {
+      window.location.href = "/auth/login";
+    });
+
+    $("logoutBtn").addEventListener("click", async () => {
+      try {
+        await api("/auth/logout", { method: "POST", body: "{}" });
+        $("authToken").value = "";
+        showNotice("已退出");
+      } catch (err) {
+        showNotice(err.message, true);
+      }
+    });
+
+    loadUser().catch(err => showNotice(err.message, true));
+  </script>
+</body>
+</html>

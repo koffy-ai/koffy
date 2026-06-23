@@ -1,0 +1,97 @@
+# Replace the three example hostnames and certificate paths before use.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name koffy.example.com gateway.koffy.example.com auth.koffy.example.com;
+    return 301 https://$host$request_uri;
+}
+
+# Koffy Web and same-origin Billing API/authentication endpoints.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name koffy.example.com;
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $koffy_web http://koffy-web:3000;
+    set $koffy_billing_api http://koffy-billing-api:8080;
+
+    ssl_certificate /etc/nginx/certs/koffy.example.com.pem;
+    ssl_certificate_key /etc/nginx/certs/koffy.example.com.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=63072000" always;
+
+    location /api/ {
+        proxy_pass $koffy_billing_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 24m;
+    }
+
+    location /auth/ {
+        proxy_pass $koffy_billing_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 24m;
+    }
+
+    location / {
+        proxy_pass $koffy_web;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Public OpenAI-compatible Koffy Gateway.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name gateway.koffy.example.com;
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $koffy_gateway http://koffy-gateway:8081;
+
+    ssl_certificate /etc/nginx/certs/gateway.koffy.example.com.pem;
+    ssl_certificate_key /etc/nginx/certs/gateway.koffy.example.com.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass $koffy_gateway;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 50m;
+        proxy_read_timeout 600s;
+    }
+}
+
+# Casdoor public endpoint provided by the production Compose stack.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name auth.koffy.example.com;
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $casdoor http://casdoor:8000;
+
+    ssl_certificate /etc/nginx/certs/auth.koffy.example.com.pem;
+    ssl_certificate_key /etc/nginx/certs/auth.koffy.example.com.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass $casdoor;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+}
