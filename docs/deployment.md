@@ -1,6 +1,6 @@
 # Deployment
 
-This guide covers the supported local and production layouts for Koffy v0.1.0.
+This guide covers the supported local and production layouts for Koffy v0.2.0.
 
 ## Requirements
 
@@ -99,7 +99,7 @@ Do not expose `koffy-billing-api:8080`, MySQL, Redis, or LiteLLM directly to the
 - `BILLING_INTERNAL_API_KEY` authenticates Gateway-to-Billing calls and should contain at least 32 random bytes.
 - `LITELLM_MASTER_KEY` must match LiteLLM's configured master key.
 - `CAPTCHA_ENABLED=false` disables only the human challenge. SMS codes continue to work when a Casdoor SMS provider is configured.
-- `WECHAT_PAY_ENABLED=false` is the safe default. Enabling it requires every merchant field, mounted key files, and a public HTTPS notify URL.
+- `WECHAT_PAY_ENABLED=false` and `ALIPAY_PAY_ENABLED=false` are safe defaults. Enabling either provider requires every merchant field, mounted key files, and a public HTTPS notify URL.
 - `.env` and `production.env` are ignored by Git. Never put secret values in Compose files or container images.
 
 ## Persistent customization and upgrades
@@ -113,7 +113,7 @@ Image upgrades do not overwrite deployment-specific settings:
 | Domains and reverse-proxy rules | `deployments/nginx/koffy.conf` |
 | Model routes and provider mapping | `deployments/litellm/config.yaml` |
 | TLS certificates | `certs/` |
-| WeChat Pay keys | `secrets/` |
+| WeChat Pay and Alipay keys | `secrets/` |
 | Production environment and credentials | `production.env` |
 
 The repository tracks only neutral defaults and `.example` templates. Update containers with `docker compose pull` and `docker compose up -d`; do not run `docker compose down -v` unless you intentionally want to delete databases and uploaded branding.
@@ -135,9 +135,35 @@ The notify URL must be publicly reachable over HTTPS and must not contain query 
 https://koffy.example.com/api/v1/payments/wechat/notify
 ```
 
+## Optional Alipay
+
+Koffy supports Alipay web payments through two Alipay trade flows:
+
+- `alipay.trade.page.pay` for desktop browser checkout.
+- `alipay.trade.wap.pay` for mobile H5 checkout.
+
+Mount the application private key and either the Alipay public key or the three certificate-mode files under `./secrets` on the host.
+
+Normal public-key mode:
+
+- `ALIPAY_APP_ID`
+- `ALIPAY_PRIVATE_KEY_PATH=/app/secrets/alipay_private_key.pem`
+- `ALIPAY_PUBLIC_KEY_PATH=/app/secrets/alipay_public_key.pem`
+- `ALIPAY_NOTIFY_URL=https://koffy.example.com/api/v1/payments/alipay/notify`
+
+Certificate mode:
+
+- `ALIPAY_APP_CERT_PATH`
+- `ALIPAY_CERT_PATH`
+- `ALIPAY_ROOT_CERT_PATH`
+
+Set `ALIPAY_PRODUCTION=false` only when using the Alipay sandbox. The notify URL must be public HTTPS and must not contain query parameters.
+
 ## Backup and upgrades
 
-Back up the `mysql_data` volume (both `koffy` and `casdoor` databases), ignored runtime configs, certificates, and secrets. Test restoration before relying on backups. v0.1.0 is the initial public schema baseline; future releases that change the schema must add forward migration files and document the supported upgrade path in `CHANGELOG.md`.
+Back up the `mysql_data` volume (both `koffy` and `casdoor` databases), ignored runtime configs, certificates, and secrets. Test restoration before relying on backups. Each release that changes the schema adds a forward migration file and documents the supported upgrade path in `CHANGELOG.md`.
+
+If you are upgrading an existing v0.1.0 database to a version with Alipay support, run `migrations/003_add_alipay.sql` against the `koffy` database before creating Alipay recharge orders. Fresh installations do not need this extra step because `migrations/001_init.sql` already contains the updated provider enum.
 
 ## Troubleshooting
 

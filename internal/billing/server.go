@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"koffy/internal/config"
 	"koffy/internal/contracts"
 	"koffy/internal/httpx"
+	alipaypay "koffy/internal/payments/alipay"
 	"koffy/internal/payments/wechatpay"
 )
 
@@ -23,6 +25,8 @@ type Server struct {
 	auth     *auth.Authenticator
 	wechatMu sync.Mutex
 	wechat   *wechatpay.Client
+	alipayMu sync.Mutex
+	alipay   *alipaypay.Client
 }
 
 func NewServer(cfg config.Config, db *sql.DB) *Server {
@@ -112,6 +116,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/users/{user_id}/subscriptions", s.adminGrantSubscription)
 	mux.HandleFunc("POST /api/v1/recharge/orders", s.createRechargeOrder)
 	mux.HandleFunc("POST /api/v1/payments/wechat/notify", s.wechatPaymentNotify)
+	mux.HandleFunc("POST /api/v1/payments/alipay/notify", s.alipayPaymentNotify)
 	return mux
 }
 
@@ -370,11 +375,20 @@ func (s *Server) createRechargeOrder(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "invalid_request", "amount_cents must be positive")
 		return
 	}
-	if !s.cfg.WeChatPayEnabled {
-		httpx.Error(w, http.StatusServiceUnavailable, "wechat_pay_disabled", "wechat pay is disabled")
+	provider := paymentProviderForChannel(req.Channel)
+	if provider == "" {
+		httpx.Error(w, http.StatusBadRequest, "invalid_request", "unsupported payment channel")
 		return
 	}
-	if s.cfg.AppEnv != "local" && req.Channel == "wechat_jsapi" {
+	if provider == "wechat" && !s.cfg.WeChatPayEnabled {
+		httpx.Error(w, http.StatusServiceUnavailable, "wechat_pay_disabled", "微信支付未启用")
+		return
+	}
+	if provider == "alipay" && !s.cfg.AlipayPayEnabled {
+		httpx.Error(w, http.StatusServiceUnavailable, "alipay_disabled", "支付宝支付未启用")
+		return
+	}
+	if provider == "wechat" && s.cfg.AppEnv != "local" && req.Channel == "wechat_jsapi" {
 		if req.WeChatPayCode == "" {
 			httpx.Error(w, http.StatusBadRequest, "wechat_pay_openid_required", "需要先获取微信支付授权，请重新点击微信支付")
 			return
@@ -396,23 +410,44 @@ func (s *Server) createRechargeOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.cfg.AppEnv != "local" {
-		client, err := s.wechatClient(r.Context())
-		if err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "wechat_pay_not_configured", err.Error())
-			return
+		switch provider {
+		case "wechat":
+			client, err := s.wechatClient(r.Context())
+			if err != nil {
+				httpx.Error(w, http.StatusInternalServerError, "wechat_pay_not_configured", err.Error())
+				return
+			}
+			payment, err := client.Prepay(r.Context(), wechatpay.PrepayRequest{
+				OrderNo:     resp.OrderNo,
+				AmountCents: resp.AmountCents,
+				Description: req.Description,
+				Channel:     req.Channel,
+				OpenID:      req.OpenID,
+			})
+			if err != nil {
+				httpx.Error(w, http.StatusBadGateway, "wechat_pay_prepay_failed", err.Error())
+				return
+			}
+			resp.Payment = payment
+		case "alipay":
+			client, err := s.alipayClient()
+			if err != nil {
+				httpx.Error(w, http.StatusInternalServerError, "alipay_not_configured", err.Error())
+				return
+			}
+			payment, err := client.Prepay(alipaypay.PrepayRequest{
+				OrderNo:     resp.OrderNo,
+				AmountCents: resp.AmountCents,
+				Description: req.Description,
+				Channel:     req.Channel,
+			})
+			if err != nil {
+				code, message := friendlyAlipayPrepayError(err)
+				httpx.Error(w, http.StatusBadGateway, code, message)
+				return
+			}
+			resp.Payment = payment
 		}
-		payment, err := client.Prepay(r.Context(), wechatpay.PrepayRequest{
-			OrderNo:     resp.OrderNo,
-			AmountCents: resp.AmountCents,
-			Description: req.Description,
-			Channel:     req.Channel,
-			OpenID:      req.OpenID,
-		})
-		if err != nil {
-			httpx.Error(w, http.StatusBadGateway, "wechat_pay_prepay_failed", err.Error())
-			return
-		}
-		resp.Payment = payment
 	}
 	httpx.JSON(w, http.StatusOK, resp)
 }
@@ -473,6 +508,60 @@ func (s *Server) wechatPaymentNotify(w http.ResponseWriter, r *http.Request) {
 		"already_paid":   resp.AlreadyPaid,
 		"credited_coins": resp.CreditedCoins,
 	})
+}
+
+func (s *Server) alipayPaymentNotify(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.AppEnv == "local" && r.Header.Get("X-Alipay-Test") == "true" {
+		var req LocalAlipayNotifyRequest
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		if req.EventID == "" || req.OrderNo == "" || req.TransactionID == "" {
+			httpx.Error(w, http.StatusBadRequest, "invalid_request", "event_id, order_no and transaction_id are required")
+			return
+		}
+		resp, err := s.store.ProcessLocalAlipayNotify(r.Context(), req)
+		if err != nil {
+			s.writeStoreError(w, err)
+			return
+		}
+		httpx.JSON(w, http.StatusOK, resp)
+		return
+	}
+	if !s.cfg.AlipayPayEnabled {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("fail"))
+		return
+	}
+	client, err := s.alipayClient()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("fail"))
+		return
+	}
+	notification, err := client.ParseNotification(r.Context(), r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("fail"))
+		return
+	}
+	if notification.TradeStatus != "TRADE_SUCCESS" && notification.TradeStatus != "TRADE_FINISHED" {
+		client.ACKNotification(w)
+		return
+	}
+	if _, err := s.store.ProcessAlipayPaymentSuccess(r.Context(), AlipayPaymentSuccess{
+		EventID:       notification.EventID,
+		EventType:     notification.EventType,
+		OrderNo:       notification.OrderNo,
+		TransactionID: notification.TransactionID,
+		AmountCents:   notification.AmountCents,
+		SuccessTime:   notification.SuccessTime,
+	}); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("fail"))
+		return
+	}
+	client.ACKNotification(w)
 }
 
 func (s *Server) adminListApps(w http.ResponseWriter, r *http.Request) {
@@ -1074,6 +1163,48 @@ func (s *Server) wechatClient(ctx context.Context) (*wechatpay.Client, error) {
 	}
 	s.wechat = client
 	return client, nil
+}
+
+func (s *Server) alipayClient() (*alipaypay.Client, error) {
+	s.alipayMu.Lock()
+	defer s.alipayMu.Unlock()
+	if s.alipay != nil {
+		return s.alipay, nil
+	}
+	client, err := alipaypay.NewClient(s.cfg)
+	if err != nil {
+		return nil, err
+	}
+	s.alipay = client
+	return client, nil
+}
+
+func paymentProviderForChannel(channel string) string {
+	switch channel {
+	case "", "wechat_native", "wechat_jsapi":
+		return "wechat"
+	case "alipay_page", "alipay_wap":
+		return "alipay"
+	default:
+		return ""
+	}
+}
+
+func friendlyAlipayPrepayError(err error) (string, string) {
+	raw := err.Error()
+	normalized := strings.ToLower(raw)
+	switch {
+	case strings.Contains(raw, "40003") || strings.Contains(raw, "应用未上线") || strings.Contains(normalized, "app not online"):
+		return "alipay_app_not_online", "支付宝应用未上线，请等待应用审核通过并上线后再试"
+	case strings.Contains(raw, "产品") && (strings.Contains(raw, "未开通") || strings.Contains(raw, "未签约")):
+		return "alipay_product_not_enabled", "支付宝支付产品未开通或未签约，请在支付宝商家平台开通对应支付产品后再试"
+	case strings.Contains(raw, "无权") || strings.Contains(raw, "无权限") || strings.Contains(normalized, "isv.insufficient-isv-permissions"):
+		return "alipay_product_not_enabled", "当前支付宝应用没有调用该支付接口的权限，请确认已开通对应支付产品"
+	case strings.Contains(raw, "签名") || strings.Contains(normalized, "sign"):
+		return "alipay_sign_error", "支付宝支付签名校验失败，请检查应用私钥、支付宝公钥或证书配置"
+	default:
+		return "alipay_prepay_failed", raw
+	}
 }
 
 func writeAuthError(w http.ResponseWriter, err error) {

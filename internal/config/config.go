@@ -75,6 +75,18 @@ type Config struct {
 	WeChatPayPublicKeyID     string
 	WeChatPayPublicKeyPath   string
 	WeChatPayNotifyURL       string
+
+	AlipayPayEnabled     bool
+	AlipayAppID          string
+	AlipayPrivateKeyPath string
+	AlipayPublicKey      string
+	AlipayPublicKeyPath  string
+	AlipayAppCertPath    string
+	AlipayCertPath       string
+	AlipayRootCertPath   string
+	AlipayNotifyURL      string
+	AlipayReturnURL      string
+	AlipayProduction     bool
 }
 
 func Load() Config {
@@ -147,6 +159,18 @@ func Load() Config {
 		WeChatPayPublicKeyID:     env("WECHAT_PAY_PUBLIC_KEY_ID", ""),
 		WeChatPayPublicKeyPath:   env("WECHAT_PAY_PUBLIC_KEY_PATH", ""),
 		WeChatPayNotifyURL:       env("WECHAT_PAY_NOTIFY_URL", ""),
+
+		AlipayPayEnabled:     envBool("ALIPAY_PAY_ENABLED", false),
+		AlipayAppID:          env("ALIPAY_APP_ID", ""),
+		AlipayPrivateKeyPath: env("ALIPAY_PRIVATE_KEY_PATH", ""),
+		AlipayPublicKey:      envMultiline("ALIPAY_PUBLIC_KEY", ""),
+		AlipayPublicKeyPath:  env("ALIPAY_PUBLIC_KEY_PATH", ""),
+		AlipayAppCertPath:    env("ALIPAY_APP_CERT_PATH", ""),
+		AlipayCertPath:       env("ALIPAY_CERT_PATH", ""),
+		AlipayRootCertPath:   env("ALIPAY_ROOT_CERT_PATH", ""),
+		AlipayNotifyURL:      env("ALIPAY_NOTIFY_URL", ""),
+		AlipayReturnURL:      env("ALIPAY_RETURN_URL", ""),
+		AlipayProduction:     envBool("ALIPAY_PRODUCTION", strings.EqualFold(appEnv, "production")),
 	}
 }
 
@@ -198,6 +222,14 @@ func (c Config) Validate(service string) error {
 			if c.WeChatPayPublicKeyID != "" || c.WeChatPayPublicKeyPath != "" {
 				required["WECHAT_PAY_PUBLIC_KEY_ID"] = c.WeChatPayPublicKeyID
 				required["WECHAT_PAY_PUBLIC_KEY_PATH"] = c.WeChatPayPublicKeyPath
+			}
+		}
+		if c.AlipayPayEnabled {
+			required["ALIPAY_APP_ID"] = c.AlipayAppID
+			required["ALIPAY_PRIVATE_KEY_PATH"] = c.AlipayPrivateKeyPath
+			required["ALIPAY_NOTIFY_URL"] = c.AlipayNotifyURL
+			if c.AlipayPublicKey == "" && c.AlipayPublicKeyPath == "" && (c.AlipayAppCertPath == "" || c.AlipayCertPath == "" || c.AlipayRootCertPath == "") {
+				required["ALIPAY_PUBLIC_KEY_OR_CERTS"] = ""
 			}
 		}
 	case "koffy-gateway":

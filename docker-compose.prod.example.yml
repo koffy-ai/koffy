@@ -53,6 +53,17 @@ x-koffy-environment: &koffy-environment
   WECHAT_PAY_PUBLIC_KEY_ID: ${WECHAT_PAY_PUBLIC_KEY_ID:-}
   WECHAT_PAY_PUBLIC_KEY_PATH: ${WECHAT_PAY_PUBLIC_KEY_PATH:-/app/secrets/wechat_pay_public_key.pem}
   WECHAT_PAY_NOTIFY_URL: ${WECHAT_PAY_NOTIFY_URL:-}
+  ALIPAY_PAY_ENABLED: ${ALIPAY_PAY_ENABLED:-false}
+  ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
+  ALIPAY_PRIVATE_KEY_PATH: ${ALIPAY_PRIVATE_KEY_PATH:-/app/secrets/alipay_private_key.pem}
+  ALIPAY_PUBLIC_KEY: ${ALIPAY_PUBLIC_KEY:-}
+  ALIPAY_PUBLIC_KEY_PATH: ${ALIPAY_PUBLIC_KEY_PATH:-/app/secrets/alipay_public_key.pem}
+  ALIPAY_APP_CERT_PATH: ${ALIPAY_APP_CERT_PATH:-}
+  ALIPAY_CERT_PATH: ${ALIPAY_CERT_PATH:-}
+  ALIPAY_ROOT_CERT_PATH: ${ALIPAY_ROOT_CERT_PATH:-}
+  ALIPAY_NOTIFY_URL: ${ALIPAY_NOTIFY_URL:-}
+  ALIPAY_RETURN_URL: ${ALIPAY_RETURN_URL:-}
+  ALIPAY_PRODUCTION: ${ALIPAY_PRODUCTION:-true}
 
 services:
   mysql:
@@ -111,7 +122,7 @@ services:
     networks: [koffy]
 
   litellm:
-    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-latest}
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:latest}
     container_name: koffy-litellm
     restart: always
     command: ["--config", "/app/config.yaml"]

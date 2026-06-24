@@ -4,14 +4,29 @@ All notable changes to Koffy are documented in this file. The format follows [Ke
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-24
+
 ### Added
 
+- Alipay recharge support for desktop web checkout and mobile H5 checkout, including async notify handling and local test-mode hooks.
+- User-center payment method selection with WeChat Pay and Alipay brand icons.
 - Independently uploadable and persistent user-center and admin favicons.
 - Full production Compose stack for a blank Docker host.
+
+### Upgrade Notes
+
+- Existing v0.1.0 databases must run `migrations/003_add_alipay.sql` before creating Alipay recharge orders. Fresh installs already include the updated provider enum in `migrations/001_init.sql`.
 
 ### Changed
 
 - Production Nginx and LiteLLM custom configuration now uses ignored runtime files copied from tracked examples.
+- Compose examples use the stable LiteLLM `latest` image tag.
+
+### Fixed
+
+- Alipay recharge wallet ledger labels are now localized in the user center.
+- Alipay callback times without timezone information are parsed as `Asia/Shanghai` to avoid UTC container timezone offsets.
+- Alipay gateway errors are mapped to clearer user-facing messages for app status, product permission, and signing problems.
 
 ## [0.1.0] - 2026-06-18
 

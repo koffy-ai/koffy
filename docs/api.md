@@ -568,8 +568,12 @@ POST /api/v1/recharge/orders
 
 - `wechat_native`：返回二维码支付链接 `code_url`。
 - `wechat_jsapi`：返回 JSAPI 调起支付参数，必须传 `openid`。
+- `alipay_page`：返回支付宝电脑网站支付跳转地址 `pay_url`。
+- `alipay_wap`：返回支付宝手机网站支付跳转地址 `pay_url`。
 
-当 `WECHAT_PAY_ENABLED=false` 时，该接口返回 `503 wechat_pay_disabled`，不会创建充值订单；其它非充值功能不受影响。
+当 `WECHAT_PAY_ENABLED=false` 或 `ALIPAY_PAY_ENABLED=false` 时，对应渠道会返回 `503`，不会创建充值订单；其它非充值功能不受影响。
+
+支付宝下单失败时，Koffy 会将常见网关错误翻译为可读错误码，例如 `alipay_app_not_online`、`alipay_product_not_enabled` 或 `alipay_sign_error`。
 
 本地响应：
 
@@ -606,6 +610,26 @@ POST /api/v1/recharge/orders
 ```
 
 JSAPI 响应中的 `payment` 会包含 `prepay_id`、`appId`、`timeStamp`、`nonceStr`、`package`、`signType` 和 `paySign`。
+
+支付宝电脑网站 / 手机网站支付响应示例：
+
+```json
+{
+  "order_no": "kf202605271417231b68f2b0443b5ba8",
+  "provider": "alipay",
+  "amount_cents": 100,
+  "coins": 100,
+  "status": "pending",
+  "payment": {
+    "channel": "alipay_page",
+    "pay_url": "https://openapi.alipay.com/gateway.do?...",
+    "notify_url": "https://koffy.example.com/api/v1/payments/alipay/notify",
+    "return_url": "https://koffy.example.com/center/recharge"
+  }
+}
+```
+
+`alipay_wap` 的响应结构相同，只是 `channel` 为 `alipay_wap`。
 
 ## 管理后台
 
@@ -1043,6 +1067,44 @@ X-WeChatPay-Test: true
   "order_no": "kf202605271417231b68f2b0443b5ba8",
   "transaction_id": "wx-local-tx-001",
   "success_time": "2026-05-27T14:17:30+08:00"
+}
+```
+
+## 支付宝回调
+
+```http
+POST /api/v1/payments/alipay/notify
+```
+
+生产处理要求：
+
+- 使用支付宝 SDK 对异步通知参数验签。
+- 仅 `trade_status=TRADE_SUCCESS` 或 `TRADE_FINISHED` 时入账。
+- 校验通知金额与本地充值订单金额一致。
+- 校验订单支付 provider 必须为 `alipay`。
+- `payment_events.provider + event_id` 唯一。
+- 重复回调直接返回 `success`，不重复入账。
+
+当前生产代码使用 `github.com/smartwalle/alipay/v3`：
+
+- 桌面端支付调用 `alipay.trade.page.pay`。
+- 手机 H5 支付调用 `alipay.trade.wap.pay`。
+- 回调时使用 `DecodeNotification` 解码并验签。
+- 业务处理成功后向支付宝返回 `success`。
+
+本地测试模式可使用明文 JSON 通知：
+
+```http
+X-Alipay-Test: true
+```
+
+```json
+{
+  "event_id": "notify-local-recharge-001",
+  "event_type": "trade_status_sync",
+  "order_no": "kf202605271417231b68f2b0443b5ba8",
+  "transaction_id": "alipay-local-tx-001",
+  "success_time": "2026-06-23T14:17:30+08:00"
 }
 ```
 

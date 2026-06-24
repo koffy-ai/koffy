@@ -1564,6 +1564,81 @@ a {
   line-height: 1.45;
 }
 
+.center-shell .payment-method-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.center-shell .payment-method-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid var(--koffy-border-soft);
+  border-radius: 14px;
+  background: rgba(5, 14, 26, 0.72);
+  color: var(--koffy-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.center-shell .payment-method-card:hover,
+.center-shell .payment-method-card.active {
+  transform: translateY(-1px);
+  border-color: rgba(0, 212, 170, 0.62);
+  background: rgba(0, 212, 170, 0.1);
+  box-shadow: 0 14px 34px rgba(0, 212, 170, 0.1);
+}
+
+.center-shell .payment-method-card.alipay-method:hover,
+.center-shell .payment-method-card.alipay-method.active {
+  border-color: rgba(22, 119, 255, 0.72);
+  background: rgba(22, 119, 255, 0.13);
+  box-shadow: 0 14px 34px rgba(22, 119, 255, 0.12);
+}
+
+.center-shell .payment-method-card strong,
+.center-shell .payment-method-card small {
+  display: block;
+}
+
+.center-shell .payment-method-card strong {
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.center-shell .payment-method-card small {
+  margin-top: 4px;
+  color: var(--koffy-text-muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.center-shell .pay-brand-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  background: transparent;
+}
+
+.center-shell .pay-brand-icon img {
+  display: block;
+  max-width: 26px;
+  max-height: 26px;
+  object-fit: contain;
+}
+
+@media (max-width: 640px) {
+  .center-shell .payment-method-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .center-shell .recharge-card .ant-btn-primary {
   height: 44px;
   border-radius: 14px;

@@ -24,6 +24,7 @@ flowchart TB
     Billing --> Casdoor[Casdoor]
     Billing -. optional .-> SMS[SMS provider]
     Billing -. optional .-> WeChat[WeChat APIs]
+    Billing -. optional .-> Alipay[Alipay APIs]
 ```
 
 ## Service responsibilities
@@ -83,7 +84,7 @@ Every billable request is keyed by application, user, and idempotency key. Durab
 - authentication state, login codes, and phone verification codes are short-lived and periodically cleaned.
 - uploaded user-center/admin logos and favicons are stored in `branding_assets`; avatars are stored in `user_avatar_assets`, so image upgrades do not replace deployment branding.
 
-The full v0.1.0 schema is in `migrations/001_init.sql`. `002_seed_local.sql` contains development-only demo records.
+The fresh-install schema is in `migrations/001_init.sql`. `002_seed_local.sql` contains development-only demo records. Published releases that change existing schemas add forward migration files such as `migrations/003_add_alipay.sql`.
 
 Container images contain neutral fallback assets only. Deployment-specific Nginx and LiteLLM configuration, TLS certificates, payment keys, and environment values live in ignored host files; durable application and Casdoor state lives in Docker volumes.
 

@@ -280,6 +280,8 @@ export type WeChatJSPayment = {
   paySign: string;
 };
 
+export type PaymentMethod = "wechat" | "alipay";
+
 export type AIProviderItem = {
   id: number;
   provider_code: string;

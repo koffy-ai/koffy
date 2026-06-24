@@ -282,7 +282,7 @@ CREATE TABLE IF NOT EXISTS recharge_orders (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   order_no VARCHAR(64) NOT NULL,
   user_id BIGINT UNSIGNED NOT NULL,
-  provider ENUM('wechat') NOT NULL DEFAULT 'wechat',
+  provider ENUM('wechat', 'alipay') NOT NULL DEFAULT 'wechat',
   amount_cents BIGINT NOT NULL,
   coins BIGINT NOT NULL,
   status ENUM('pending', 'paid', 'closed', 'failed') NOT NULL DEFAULT 'pending',
@@ -300,7 +300,7 @@ CREATE TABLE IF NOT EXISTS recharge_orders (
 
 CREATE TABLE IF NOT EXISTS payment_events (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  provider ENUM('wechat') NOT NULL DEFAULT 'wechat',
+  provider ENUM('wechat', 'alipay') NOT NULL DEFAULT 'wechat',
   event_id VARCHAR(128) NOT NULL,
   event_type VARCHAR(128) NOT NULL,
   order_no VARCHAR(64) NOT NULL DEFAULT '',

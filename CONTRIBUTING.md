@@ -19,7 +19,7 @@ Thanks for helping improve Koffy.
 
 ## Database changes
 
-The public v0.1.0 baseline uses `migrations/001_init.sql` for the complete schema and `migrations/002_seed_local.sql` only for local demo data. Until a release after v0.1.0 requires an upgrade path, keep the baseline schema internally consistent and test it against an empty MySQL 8.4 database.
+Keep `migrations/001_init.sql` internally consistent for fresh installs and use `migrations/002_seed_local.sql` only for local demo data. Published releases that change existing schemas must add forward migration files, for example `migrations/003_add_alipay.sql`, and document the upgrade path in `CHANGELOG.md`.
 
 ## Conduct
 

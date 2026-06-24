@@ -63,7 +63,24 @@ type LocalWeChatNotifyRequest struct {
 	SuccessTime   string `json:"success_time"`
 }
 
+type LocalAlipayNotifyRequest struct {
+	EventID       string `json:"event_id"`
+	EventType     string `json:"event_type"`
+	OrderNo       string `json:"order_no"`
+	TransactionID string `json:"transaction_id"`
+	SuccessTime   string `json:"success_time"`
+}
+
 type WeChatPaymentSuccess struct {
+	EventID       string
+	EventType     string
+	OrderNo       string
+	TransactionID string
+	AmountCents   int64
+	SuccessTime   string
+}
+
+type AlipayPaymentSuccess struct {
 	EventID       string
 	EventType     string
 	OrderNo       string
@@ -92,16 +109,31 @@ func (s *Store) CreateRechargeOrder(ctx context.Context, userID int64, req Creat
 	if channel == "" {
 		channel = "wechat_native"
 	}
+	provider := "wechat"
+	notifyURL := cfg.WeChatPayNotifyURL
+	pendingMode := "pending_wechat_prepay"
+	testNotifyHeader := "X-WeChatPay-Test: true"
+	switch channel {
+	case "alipay_page", "alipay_wap":
+		provider = "alipay"
+		notifyURL = cfg.AlipayNotifyURL
+		pendingMode = "pending_alipay_prepay"
+		testNotifyHeader = "X-Alipay-Test: true"
+	case "wechat_jsapi", "wechat_native":
+	default:
+		return RechargeOrderResponse{}, fmt.Errorf("unsupported payment channel")
+	}
 	description := req.Description
 	if description == "" {
-		description = "compute coin recharge"
+		description = "点数充值"
 	}
 
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO recharge_orders (order_no, user_id, provider, amount_cents, coins, status)
-		VALUES (?, ?, 'wechat', ?, ?, 'pending')`,
+		VALUES (?, ?, ?, ?, ?, 'pending')`,
 		orderNo,
 		userID,
+		provider,
 		req.AmountCents,
 		coins,
 	)
@@ -112,17 +144,17 @@ func (s *Store) CreateRechargeOrder(ctx context.Context, userID int64, req Creat
 	payment := map[string]any{
 		"channel":     channel,
 		"description": description,
-		"notify_url":  cfg.WeChatPayNotifyURL,
-		"mode":        "pending_wechat_prepay",
+		"notify_url":  notifyURL,
+		"mode":        pendingMode,
 	}
 	if cfg.AppEnv == "local" {
 		payment["mode"] = "local_test"
-		payment["test_notify_header"] = "X-WeChatPay-Test: true"
+		payment["test_notify_header"] = testNotifyHeader
 	}
 
 	return RechargeOrderResponse{
 		OrderNo:     orderNo,
-		Provider:    "wechat",
+		Provider:    provider,
 		AmountCents: req.AmountCents,
 		Coins:       coins,
 		Status:      "pending",
@@ -156,6 +188,19 @@ func (s *Store) ProcessLocalWeChatNotify(ctx context.Context, req LocalWeChatNot
 		req.EventType = "TRANSACTION.SUCCESS"
 	}
 	return s.ProcessWeChatPaymentSuccess(ctx, WeChatPaymentSuccess{
+		EventID:       req.EventID,
+		EventType:     req.EventType,
+		OrderNo:       req.OrderNo,
+		TransactionID: req.TransactionID,
+		SuccessTime:   req.SuccessTime,
+	})
+}
+
+func (s *Store) ProcessLocalAlipayNotify(ctx context.Context, req LocalAlipayNotifyRequest) (PaymentNotifyResponse, error) {
+	if req.EventType == "" {
+		req.EventType = "trade_status_sync"
+	}
+	return s.ProcessAlipayPaymentSuccess(ctx, AlipayPaymentSuccess{
 		EventID:       req.EventID,
 		EventType:     req.EventType,
 		OrderNo:       req.OrderNo,
@@ -201,7 +246,54 @@ func (s *Store) ProcessWeChatPaymentSuccess(ctx context.Context, req WeChatPayme
 	if err != nil {
 		return PaymentNotifyResponse{}, err
 	}
+	return s.processPaymentSuccess(ctx, paymentSuccessRequest{
+		Provider:        "wechat",
+		EventID:         req.EventID,
+		EventType:       req.EventType,
+		OrderNo:         req.OrderNo,
+		ProviderTradeNo: req.TransactionID,
+		AmountCents:     req.AmountCents,
+		SuccessTime:     successTime,
+		PayloadJSON:     payload,
+		LedgerRemark:    "wechat recharge",
+	})
+}
 
+func (s *Store) ProcessAlipayPaymentSuccess(ctx context.Context, req AlipayPaymentSuccess) (PaymentNotifyResponse, error) {
+	successTime := time.Now()
+	if parsed, ok := parsePaymentSuccessTime(req.SuccessTime); ok {
+		successTime = parsed
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return PaymentNotifyResponse{}, err
+	}
+	return s.processPaymentSuccess(ctx, paymentSuccessRequest{
+		Provider:        "alipay",
+		EventID:         req.EventID,
+		EventType:       req.EventType,
+		OrderNo:         req.OrderNo,
+		ProviderTradeNo: req.TransactionID,
+		AmountCents:     req.AmountCents,
+		SuccessTime:     successTime,
+		PayloadJSON:     payload,
+		LedgerRemark:    "alipay recharge",
+	})
+}
+
+type paymentSuccessRequest struct {
+	Provider        string
+	EventID         string
+	EventType       string
+	OrderNo         string
+	ProviderTradeNo string
+	AmountCents     int64
+	SuccessTime     time.Time
+	PayloadJSON     []byte
+	LedgerRemark    string
+}
+
+func (s *Store) processPaymentSuccess(ctx context.Context, req paymentSuccessRequest) (PaymentNotifyResponse, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return PaymentNotifyResponse{}, err
@@ -212,12 +304,13 @@ func (s *Store) ProcessWeChatPaymentSuccess(ctx context.Context, req WeChatPayme
 		INSERT IGNORE INTO payment_events (
 			provider, event_id, event_type, order_no, provider_trade_no, payload_json
 		)
-		VALUES ('wechat', ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		req.Provider,
 		req.EventID,
 		req.EventType,
 		req.OrderNo,
-		req.TransactionID,
-		payload,
+		req.ProviderTradeNo,
+		req.PayloadJSON,
 	)
 	if err != nil {
 		return PaymentNotifyResponse{}, err
@@ -240,8 +333,11 @@ func (s *Store) ProcessWeChatPaymentSuccess(ctx context.Context, req WeChatPayme
 	if req.AmountCents > 0 && req.AmountCents != order.AmountCents {
 		return PaymentNotifyResponse{}, ErrRequestConflict
 	}
+	if order.Provider != req.Provider {
+		return PaymentNotifyResponse{}, ErrRequestConflict
+	}
 	if order.Status == "paid" {
-		if err := markPaymentEventProcessed(ctx, tx, req.EventID); err != nil {
+		if err := markPaymentEventProcessed(ctx, tx, req.Provider, req.EventID); err != nil {
 			return PaymentNotifyResponse{}, err
 		}
 		if err := tx.Commit(); err != nil {
@@ -271,8 +367,8 @@ func (s *Store) ProcessWeChatPaymentSuccess(ctx context.Context, req WeChatPayme
 		UPDATE recharge_orders
 		SET status = 'paid', provider_trade_no = ?, paid_at = ?
 		WHERE id = ?`,
-		req.TransactionID,
-		successTime,
+		req.ProviderTradeNo,
+		req.SuccessTime,
 		order.ID,
 	); err != nil {
 		return PaymentNotifyResponse{}, err
@@ -288,11 +384,11 @@ func (s *Store) ProcessWeChatPaymentSuccess(ctx context.Context, req WeChatPayme
 		order.Coins,
 		balanceAfter,
 		order.ID,
-		"wechat recharge",
+		req.LedgerRemark,
 	); err != nil {
 		return PaymentNotifyResponse{}, err
 	}
-	if err := markPaymentEventProcessed(ctx, tx, req.EventID); err != nil {
+	if err := markPaymentEventProcessed(ctx, tx, req.Provider, req.EventID); err != nil {
 		return PaymentNotifyResponse{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -308,6 +404,7 @@ func (s *Store) ProcessWeChatPaymentSuccess(ctx context.Context, req WeChatPayme
 type rechargeOrderRecord struct {
 	ID          int64
 	UserID      int64
+	Provider    string
 	AmountCents int64
 	Coins       int64
 	Status      string
@@ -316,26 +413,48 @@ type rechargeOrderRecord struct {
 func findRechargeOrderForUpdate(ctx context.Context, tx *sql.Tx, orderNo string) (rechargeOrderRecord, error) {
 	var order rechargeOrderRecord
 	err := tx.QueryRowContext(ctx, `
-		SELECT id, user_id, amount_cents, coins, status
+		SELECT id, user_id, provider, amount_cents, coins, status
 		FROM recharge_orders
 		WHERE order_no = ?
 		FOR UPDATE`,
 		orderNo,
-	).Scan(&order.ID, &order.UserID, &order.AmountCents, &order.Coins, &order.Status)
+	).Scan(&order.ID, &order.UserID, &order.Provider, &order.AmountCents, &order.Coins, &order.Status)
 	if err == sql.ErrNoRows {
 		return rechargeOrderRecord{}, ErrRechargeOrderNotFound
 	}
 	return order, err
 }
 
-func markPaymentEventProcessed(ctx context.Context, tx *sql.Tx, eventID string) error {
+func markPaymentEventProcessed(ctx context.Context, tx *sql.Tx, provider, eventID string) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE payment_events
 		SET processed_at = CURRENT_TIMESTAMP(3)
-		WHERE provider = 'wechat' AND event_id = ?`,
+		WHERE provider = ? AND event_id = ?`,
+		provider,
 		eventID,
 	)
 	return err
+}
+
+func parsePaymentSuccessTime(value string) (time.Time, bool) {
+	if value == "" {
+		return time.Time{}, false
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed, true
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02 15:04:05", value, paymentNotifyLocation()); err == nil {
+		return parsed, true
+	}
+	return time.Time{}, false
+}
+
+func paymentNotifyLocation() *time.Location {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("CST", 8*60*60)
+	}
+	return location
 }
 
 func newRechargeOrderNo() (string, error) {

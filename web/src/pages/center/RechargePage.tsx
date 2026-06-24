@@ -5,7 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, startWeChatPayAuth } from "../../api/client";
-import type { RechargeOrderItem, WeChatJSPayment } from "../../api/types";
+import type { PaymentMethod, RechargeOrderItem, WeChatJSPayment } from "../../api/types";
 import { cents, points, time } from "../../components/format";
 
 const amountOptions = [10, 30, 50, 100, 200, 500];
@@ -28,17 +28,27 @@ export function RechargePage() {
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
   const [amountYuan, setAmountYuan] = useState(30);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("wechat");
   const [autoPayHandled, setAutoPayHandled] = useState(false);
   const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
+  const isMobileBrowser = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
   const orders = useQuery({
     queryKey: ["recharge-orders"],
     queryFn: () => api.rechargeOrders(50)
   });
   const mutation = useMutation({
-    mutationFn: ({ nextAmountYuan, wechatPayCode }: { nextAmountYuan: number; wechatPayCode?: string }) =>
+    mutationFn: ({
+      nextAmountYuan,
+      nextPaymentMethod,
+      wechatPayCode
+    }: {
+      nextAmountYuan: number;
+      nextPaymentMethod: PaymentMethod;
+      wechatPayCode?: string;
+    }) =>
       api.createRechargeOrder({
         amount_cents: nextAmountYuan * 100,
-        channel: isWeChatBrowser ? "wechat_jsapi" : "wechat_native",
+        channel: paymentChannel(nextPaymentMethod, isWeChatBrowser, isMobileBrowser),
         description: "点数充值",
         wechat_pay_code: wechatPayCode
       }),
@@ -55,8 +65,15 @@ export function RechargePage() {
         }
         return;
       }
-      const nativeCodeURL = typeof data.payment?.code_url === "string" ? data.payment.code_url : "";
-      if (nativeCodeURL) {
+      const channel = typeof data.payment?.channel === "string" ? data.payment.channel : "";
+      const payURL = typeof data.payment?.pay_url === "string" ? data.payment.pay_url : "";
+      if (payURL) {
+        message.success(channel === "alipay_wap" ? "正在跳转支付宝支付" : "正在打开支付宝收银台");
+        window.location.href = payURL;
+        return;
+      }
+      const codeURL = typeof data.payment?.code_url === "string" ? data.payment.code_url : "";
+      if (codeURL) {
         modal.info({
           className: "center-qr-modal",
           icon: null,
@@ -64,8 +81,8 @@ export function RechargePage() {
           width: 380,
           content: (
             <div className="qr-modal-content">
-              <div className="qr-wrap">
-                <QRCodeSVG value={nativeCodeURL} size={200} includeMargin />
+              <div className="qr-wrap wechat-qr-wrap">
+                <QRCodeSVG value={codeURL} size={200} includeMargin />
               </div>
               <Typography.Text type="secondary">请使用微信扫码完成支付</Typography.Text>
               <Typography.Text>{cents(data.amount_cents)}</Typography.Text>
@@ -76,7 +93,7 @@ export function RechargePage() {
         message.success("订单已创建，请使用微信扫码支付");
         return;
       }
-      message.success("订单已创建，请按微信提示完成支付");
+      message.success("订单已创建，请按支付页面提示完成支付");
     }
   });
 
@@ -89,15 +106,15 @@ export function RechargePage() {
     setAutoPayHandled(true);
     setAmountYuan(normalizedAmount);
     canonicalizeWeChatRechargeURL();
-    mutation.mutate({ nextAmountYuan: normalizedAmount, wechatPayCode });
+    mutation.mutate({ nextAmountYuan: normalizedAmount, nextPaymentMethod: "wechat", wechatPayCode });
   }, [amountYuan, autoPayHandled, isWeChatBrowser, mutation, params]);
 
   const handlePay = () => {
-    if (isWeChatBrowser) {
+    if (paymentMethod === "wechat" && isWeChatBrowser) {
       startWeChatPayAuth(`${WECHAT_RECHARGE_PATH}?wechat_pay=1&amount_yuan=${amountYuan}`);
       return;
     }
-    mutation.mutate({ nextAmountYuan: amountYuan });
+    mutation.mutate({ nextAmountYuan: amountYuan, nextPaymentMethod: paymentMethod });
   };
   const paidOrders = useMemo(() => (orders.data?.items || []).filter((item) => item.status === "paid"), [orders.data?.items]);
 
@@ -130,9 +147,37 @@ export function RechargePage() {
                 <Statistic title="到账点数" value={amountYuan * 100} formatter={(value) => points(Number(value))} />
               </Card>
             </div>
+            <div className="payment-method-grid" role="radiogroup" aria-label="选择支付方式">
+              <button
+                type="button"
+                className={`payment-method-card ${paymentMethod === "wechat" ? "active" : ""}`}
+                onClick={() => setPaymentMethod("wechat")}
+                aria-checked={paymentMethod === "wechat"}
+                role="radio"
+              >
+                <WeChatPayIcon />
+                <span>
+                  <strong>微信支付</strong>
+                  <small>{isWeChatBrowser ? "微信内直接调起支付" : "扫码完成支付"}</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                className={`payment-method-card alipay-method ${paymentMethod === "alipay" ? "active" : ""}`}
+                onClick={() => setPaymentMethod("alipay")}
+                aria-checked={paymentMethod === "alipay"}
+                role="radio"
+              >
+                <AlipayIcon />
+                <span>
+                  <strong>支付宝</strong>
+                  <small>{isMobileBrowser ? "跳转支付宝完成支付" : "打开支付宝收银台"}</small>
+                </span>
+              </button>
+            </div>
             <Alert type="info" showIcon message="点数充值后不可退款、不可转赠，请确认金额后再支付。" />
             <Button type="primary" size="large" loading={mutation.isPending} icon={<CreditCard size={16} />} onClick={handlePay}>
-              微信支付
+              {paymentMethod === "alipay" ? "支付宝支付" : "微信支付"}
             </Button>
           </div>
         </Card>
@@ -144,7 +189,7 @@ export function RechargePage() {
               {paidOrders.slice(0, 12).map((item) => (
                 <div className="record-row" key={item.id}>
                   <div className="record-main">
-                    <div className="record-title">微信支付</div>
+                    <div className="record-title">{paymentProviderLabel(item.provider)}</div>
                     <div className="record-meta">支付时间：{time(item.paid_at || item.created_at)}</div>
                   </div>
                   <div className="record-side">
@@ -161,6 +206,16 @@ export function RechargePage() {
       </div>
     </div>
   );
+}
+
+function paymentChannel(method: PaymentMethod, isWeChatBrowser: boolean, isMobileBrowser: boolean) {
+  if (method === "alipay") return isMobileBrowser ? "alipay_wap" : "alipay_page";
+  return isWeChatBrowser ? "wechat_jsapi" : "wechat_native";
+}
+
+function paymentProviderLabel(provider: string) {
+  if (provider === "alipay") return "支付宝";
+  return "微信支付";
 }
 
 function isWeChatJSPayment(value: unknown): value is WeChatJSPayment {
@@ -226,4 +281,20 @@ function invokeWeChatPay(payment: WeChatJSPayment) {
     document.addEventListener("WeixinJSBridgeReady", invoke, { once: true });
     timer = window.setTimeout(() => finish(() => reject(new Error("微信支付组件未就绪，请稍后重试"))), 30000);
   });
+}
+
+function WeChatPayIcon() {
+  return (
+    <span className="pay-brand-icon wechat-pay-icon" aria-hidden="true">
+      <img src="/pay-wechat-icon.svg" alt="" />
+    </span>
+  );
+}
+
+function AlipayIcon() {
+  return (
+    <span className="pay-brand-icon alipay-icon" aria-hidden="true">
+      <img src="/pay-alipay-icon.png" alt="" />
+    </span>
+  );
 }

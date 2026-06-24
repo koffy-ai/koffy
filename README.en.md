@@ -16,7 +16,7 @@ Koffy is a self-hosted account, billing, and AI gateway for teams running multip
 - **Koffy Gateway**: application authentication, user authentication, rate limits, model routing, pre-authorization, and final usage settlement.
 - **Koffy Web**: user center and administration console built with React, Vite, and TypeScript.
 - **LiteLLM integration**: routes requests to OpenAI-compatible model providers.
-- **Optional integrations**: WeChat login, WeChat Pay, Tencent CAPTCHA, and SMS through a Casdoor SMS provider.
+- **Optional integrations**: WeChat login, WeChat Pay, Alipay desktop and mobile web payments, Tencent CAPTCHA, and SMS through a Casdoor SMS provider.
 
 ## Architecture
 
@@ -139,7 +139,7 @@ The Vite development server proxies `/api` and `/auth` to `http://localhost:8080
 
 ## Status
 
-Koffy is currently **v0.1.0**. Interfaces may evolve before v1.0. Review the security and operational assumptions before using it for production payments.
+Koffy is currently **v0.2.0**. Interfaces may evolve before v1.0. Review the security and operational assumptions before using it for production payments.
 
 ## License
 

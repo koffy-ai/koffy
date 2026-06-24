@@ -51,7 +51,7 @@ services:
       - koffy_local
 
   litellm:
-    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-latest}
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:latest}
     container_name: litellm
     restart: unless-stopped
     command: ["--config", "/app/config.yaml"]
