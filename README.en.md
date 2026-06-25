@@ -139,7 +139,7 @@ The Vite development server proxies `/api` and `/auth` to `http://localhost:8080
 
 ## Status
 
-Koffy is currently **v0.2.0**. Interfaces may evolve before v1.0. Review the security and operational assumptions before using it for production payments.
+Koffy is currently **v0.2.1**. Interfaces may evolve before v1.0. Review the security and operational assumptions before using it for production payments.
 
 ## License
 

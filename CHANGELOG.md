@@ -4,6 +4,13 @@ All notable changes to Koffy are documented in this file. The format follows [Ke
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-25
+
+### Fixed
+
+- Improved Alipay payment behavior from the recharge page: non-WeChat browsers now open Alipay in a separate page while keeping the Koffy recharge page available.
+- Added a WeChat in-app browser notice for users choosing Alipay, and kept WeChat in-app Alipay fallback on the current page to avoid blank pages in the embedded browser.
+
 ## [0.2.0] - 2026-06-24
 
 ### Added

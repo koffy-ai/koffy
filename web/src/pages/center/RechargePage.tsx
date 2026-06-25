@@ -10,6 +10,15 @@ import { cents, points, time } from "../../components/format";
 
 const amountOptions = [10, 30, 50, 100, 200, 500];
 const WECHAT_RECHARGE_PATH = "/center/recharge/";
+const WECHAT_ALIPAY_NOTICE =
+  "当前环境为微信内浏览，选择微信支付体验更佳。如果想在微信中使用支付宝支付，则需要在发起支付后复制显示的链接到手机浏览器中打开进行支付。直接在手机浏览器或者 PC 浏览器中使用支付宝支付体验会更加丝滑。";
+
+type RechargeMutationVars = {
+  nextAmountYuan: number;
+  nextPaymentMethod: PaymentMethod;
+  wechatPayCode?: string;
+  payWindow?: Window | null;
+};
 
 declare global {
   interface Window {
@@ -30,6 +39,7 @@ export function RechargePage() {
   const [amountYuan, setAmountYuan] = useState(30);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("wechat");
   const [autoPayHandled, setAutoPayHandled] = useState(false);
+  const [alipayWeChatNoticeShown, setAlipayWeChatNoticeShown] = useState(false);
   const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
   const isMobileBrowser = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
   const orders = useQuery({
@@ -41,18 +51,14 @@ export function RechargePage() {
       nextAmountYuan,
       nextPaymentMethod,
       wechatPayCode
-    }: {
-      nextAmountYuan: number;
-      nextPaymentMethod: PaymentMethod;
-      wechatPayCode?: string;
-    }) =>
+    }: RechargeMutationVars) =>
       api.createRechargeOrder({
         amount_cents: nextAmountYuan * 100,
         channel: paymentChannel(nextPaymentMethod, isWeChatBrowser, isMobileBrowser),
         description: "点数充值",
         wechat_pay_code: wechatPayCode
       }),
-    onSuccess: async (data) => {
+    onSuccess: async (data, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["recharge-orders"] });
       if (isWeChatBrowser && isWeChatJSPayment(data.payment)) {
         try {
@@ -68,10 +74,31 @@ export function RechargePage() {
       const channel = typeof data.payment?.channel === "string" ? data.payment.channel : "";
       const payURL = typeof data.payment?.pay_url === "string" ? data.payment.pay_url : "";
       if (payURL) {
-        message.success(channel === "alipay_wap" ? "正在跳转支付宝支付" : "正在打开支付宝收银台");
-        window.location.href = payURL;
+        if (isWeChatBrowser) {
+          message.info("正在打开支付宝链接，请按微信提示复制到手机浏览器中继续支付");
+          window.location.href = payURL;
+          return;
+        }
+        const opened = openPaymentURL(payURL, variables.payWindow);
+        if (opened) {
+          message.success(channel === "alipay_wap" ? "已在新页面打开支付宝支付" : "已在新页面打开支付宝收银台");
+        } else {
+          modal.info({
+            title: "打开支付宝支付",
+            content: (
+              <div className="qr-modal-content">
+                <Typography.Text type="secondary">浏览器拦截了新页面，请点击下方按钮继续支付。</Typography.Text>
+                <Button type="primary" href={payURL} target="_blank">
+                  打开支付宝支付
+                </Button>
+              </div>
+            ),
+            okText: "关闭"
+          });
+        }
         return;
       }
+      closePendingPaymentWindow(variables.payWindow);
       const codeURL = typeof data.payment?.code_url === "string" ? data.payment.code_url : "";
       if (codeURL) {
         modal.info({
@@ -94,6 +121,9 @@ export function RechargePage() {
         return;
       }
       message.success("订单已创建，请按支付页面提示完成支付");
+    },
+    onError: (_error, variables) => {
+      closePendingPaymentWindow(variables.payWindow);
     }
   });
 
@@ -114,7 +144,26 @@ export function RechargePage() {
       startWeChatPayAuth(`${WECHAT_RECHARGE_PATH}?wechat_pay=1&amount_yuan=${amountYuan}`);
       return;
     }
-    mutation.mutate({ nextAmountYuan: amountYuan, nextPaymentMethod: paymentMethod });
+    if (paymentMethod === "alipay" && isWeChatBrowser && !alipayWeChatNoticeShown) {
+      showWeChatAlipayNotice();
+      return;
+    }
+    const payWindow = paymentMethod === "alipay" && !isWeChatBrowser ? openPendingPaymentWindow() : undefined;
+    mutation.mutate({ nextAmountYuan: amountYuan, nextPaymentMethod: paymentMethod, payWindow });
+  };
+  const handlePaymentMethodChange = (method: PaymentMethod) => {
+    setPaymentMethod(method);
+    if (method === "alipay" && isWeChatBrowser && !alipayWeChatNoticeShown) {
+      showWeChatAlipayNotice();
+    }
+  };
+  const showWeChatAlipayNotice = () => {
+    setAlipayWeChatNoticeShown(true);
+    modal.info({
+      title: "微信内使用支付宝提示",
+      content: WECHAT_ALIPAY_NOTICE,
+      okText: "我知道了"
+    });
   };
   const paidOrders = useMemo(() => (orders.data?.items || []).filter((item) => item.status === "paid"), [orders.data?.items]);
 
@@ -151,7 +200,7 @@ export function RechargePage() {
               <button
                 type="button"
                 className={`payment-method-card ${paymentMethod === "wechat" ? "active" : ""}`}
-                onClick={() => setPaymentMethod("wechat")}
+                onClick={() => handlePaymentMethodChange("wechat")}
                 aria-checked={paymentMethod === "wechat"}
                 role="radio"
               >
@@ -164,7 +213,7 @@ export function RechargePage() {
               <button
                 type="button"
                 className={`payment-method-card alipay-method ${paymentMethod === "alipay" ? "active" : ""}`}
-                onClick={() => setPaymentMethod("alipay")}
+                onClick={() => handlePaymentMethodChange("alipay")}
                 aria-checked={paymentMethod === "alipay"}
                 role="radio"
               >
@@ -216,6 +265,82 @@ function paymentChannel(method: PaymentMethod, isWeChatBrowser: boolean, isMobil
 function paymentProviderLabel(provider: string) {
   if (provider === "alipay") return "支付宝";
   return "微信支付";
+}
+
+function openPendingPaymentWindow() {
+  const payWindow = window.open("", "_blank");
+  if (!payWindow) {
+    return null;
+  }
+  try {
+    payWindow.opener = null;
+    payWindow.document.write(`
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>正在打开支付宝支付</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #1f2937;
+        background: #f8fafc;
+      }
+      main {
+        width: min(360px, calc(100vw - 48px));
+        text-align: center;
+        line-height: 1.7;
+      }
+      strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 18px;
+      }
+      span {
+        color: #64748b;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <strong>正在打开支付宝支付</strong>
+      <span>请稍候，不要关闭此页面。</span>
+    </main>
+  </body>
+</html>`);
+    payWindow.document.close();
+  } catch {
+    // Some embedded browsers disallow writing to the new page; navigation can still work.
+  }
+  return payWindow;
+}
+
+function openPaymentURL(payURL: string, payWindow?: Window | null) {
+  if (!payWindow || payWindow.closed) {
+    return false;
+  }
+  try {
+    payWindow.location.href = payURL;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function closePendingPaymentWindow(payWindow?: Window | null) {
+  if (!payWindow || payWindow.closed) {
+    return;
+  }
+  try {
+    payWindow.close();
+  } catch {
+    // Ignore embedded browser close restrictions.
+  }
 }
 
 function isWeChatJSPayment(value: unknown): value is WeChatJSPayment {

@@ -1,6 +1,6 @@
 # Deployment
 
-This guide covers the supported local and production layouts for Koffy v0.2.0.
+This guide covers the supported local and production layouts for Koffy v0.2.1.
 
 ## Requirements
 
